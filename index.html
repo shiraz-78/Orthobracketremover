@@ -1,0 +1,1262 @@
+<title>Virtual Debond</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a fixed control rail on the left, the 3D viewport fills the rest; stacks on phones. */
+:root{
+  --bg:#eef0ec; --panel:#f9faf7; --fg:#1b2125; --muted:#5f6a70; --line:#d5dad6; --line-strong:#b8c0ba;
+  --accent:#0d7a86; --accent-ink:#ffffff; --accent-soft:#d8ecee;
+  --flag:#d2452c; --patch:#2e8b5e; --warn:#b7791f;
+  --font-ui:"Instrument Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --font-num:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
+  --vp:#dfe3de;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --bg:#15191b; --panel:#1d2225; --fg:#e8ebe6; --muted:#98a3a8; --line:#2d3539; --line-strong:#3f4a50;
+  --accent:#49b7c2; --accent-ink:#0f1a1c; --accent-soft:#1a3236; --flag:#ef6a50; --patch:#4fc38a; --warn:#d9a24a; --vp:#23292c; color-scheme:dark } }
+:root[data-theme="dark"]{
+  --bg:#15191b; --panel:#1d2225; --fg:#e8ebe6; --muted:#98a3a8; --line:#2d3539; --line-strong:#3f4a50;
+  --accent:#49b7c2; --accent-ink:#0f1a1c; --accent-soft:#1a3236; --flag:#ef6a50; --patch:#4fc38a; --warn:#d9a24a; --vp:#23292c; color-scheme:dark }
+
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--font-ui);font-size:14px;line-height:1.4}
+*{box-sizing:border-box}
+.app{height:100%;display:grid;grid-template-columns:320px 1fr;grid-template-rows:100%}
+.rail{background:var(--panel);border-right:1px solid var(--line);overflow-y:auto;min-width:0;
+  padding-block:16px 24px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:16px;display:flex;flex-direction:column;gap:18px}
+.stage{position:relative;min-width:0;min-height:0;background:var(--vp)}
+canvas#gl{display:block;width:100%;height:100%;touch-action:none;outline:none}
+canvas#gl:focus-visible{box-shadow:inset 0 0 0 2px var(--accent)}
+@media (max-width:760px){
+  .app{grid-template-columns:1fr;grid-template-rows:52vh 1fr}
+  .stage{order:0}.rail{order:1;border-right:0;border-top:1px solid var(--line);padding-right:max(16px,env(safe-area-inset-right,0px))}
+}
+h1{font-size:17px;font-weight:600;margin:0;letter-spacing:-.01em}
+.sub{color:var(--muted);font-size:12.5px;margin-top:2px}
+h2{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:0 0 8px}
+section{display:flex;flex-direction:column;gap:8px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+button,.btn{display:inline-block;font:inherit;font-weight:500;line-height:1.4;border:1px solid var(--line-strong);background:var(--panel);color:var(--fg);border-radius:6px;padding:7px 11px;cursor:pointer;min-width:0}
+button:hover,.btn:hover{border-color:var(--accent)}
+button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+button.primary,.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+button.primary:hover,.btn.primary:hover{filter:brightness(1.08)}
+.btn:focus-within{outline:2px solid var(--accent);outline-offset:1px}
+.btn.busy{opacity:.45;pointer-events:none}
+button[disabled]{opacity:.45;cursor:default}
+button.on{background:var(--accent-soft);border-color:var(--accent);color:var(--fg)}
+.file{position:relative;overflow:hidden}
+.file input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%}
+.ctl{display:grid;grid-template-columns:1fr 64px;gap:6px 10px;align-items:center}
+.ctl label{font-size:13px}
+.ctl .hint{grid-column:1/-1;color:var(--muted);font-size:12px;margin-top:-4px}
+.ctl output{font-family:var(--font-num);font-size:12.5px;text-align:right;font-variant-numeric:tabular-nums;color:var(--muted)}
+input[type=range]{grid-column:1/-1;width:100%;accent-color:var(--accent);margin:0 0 4px}
+.check{display:flex;gap:8px;align-items:center;font-size:13px}
+.check input{accent-color:var(--accent)}
+.stats{display:grid;grid-template-columns:auto 1fr;gap:3px 12px;font-size:12.5px}
+.stats dt{color:var(--muted)}.stats dd{margin:0;font-family:var(--font-num);font-variant-numeric:tabular-nums}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted)}
+.legend span::before{content:"";display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:-1px;background:var(--c)}
+.status{position:absolute;left:max(12px,env(safe-area-inset-left,0px));right:max(12px,env(safe-area-inset-right,0px));bottom:12px;pointer-events:none;display:flex;flex-direction:column;gap:6px}
+@media (max-width:760px){.status{left:12px;right:12px}}
+.status .msg{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:6px 10px;font-size:12.5px;align-self:flex-start;max-width:100%;box-shadow:0 2px 10px rgba(0,0,0,.08)}
+.status .msg.err{border-color:var(--flag);color:var(--flag)}
+.bar{height:3px;background:var(--line);border-radius:2px;overflow:hidden;width:min(100%,320px)}
+.bar i{display:block;height:100%;width:0;background:var(--accent);transition:width .15s}
+.hud{position:absolute;top:10px;right:max(12px,env(safe-area-inset-right,0px));display:flex;gap:6px}
+.hud button{padding:5px 9px;font-size:12.5px}
+.note{font-size:12px;color:var(--muted);margin:0}
+section.step h2{display:flex;align-items:center;gap:8px;text-transform:none;letter-spacing:0;font-size:13.5px;color:var(--fg)}
+section.step h2 i{font-style:normal;display:inline-grid;place-items:center;width:20px;height:20px;border-radius:50%;background:var(--accent);color:var(--accent-ink);font-size:11px;font-family:var(--font-num)}
+.seg{display:flex;flex-direction:column;gap:4px;font-size:13px}
+.seg label{display:flex;gap:8px;align-items:center}
+.seg input{accent-color:var(--accent)}
+button.link{border:0;background:none;padding:0;color:var(--accent);text-decoration:underline;font-size:inherit;cursor:pointer}
+details.sub-adv summary{cursor:pointer;font-size:12.5px;color:var(--muted);font-weight:500}
+details.sub-adv{display:flex;flex-direction:column;gap:8px}
+details.adv{border-top:1px solid var(--line);padding-top:12px;display:flex;flex-direction:column;gap:18px}
+details.adv summary{cursor:pointer;font-size:12.5px;font-weight:600;color:var(--muted);list-style:none;display:flex;align-items:center;gap:6px}
+details.adv summary::before{content:"";width:0;height:0;border:5px solid transparent;border-left-color:var(--muted);transition:transform .15s}
+details.adv[open] summary::before{transform:rotate(90deg)}
+details.adv summary::-webkit-details-marker{display:none}
+kbd{font-family:var(--font-num);font-size:11px;border:1px solid var(--line-strong);border-radius:4px;padding:0 4px}
+@media (prefers-reduced-motion:reduce){.bar i{transition:none}}
+</style>
+
+<div class="app">
+  <aside class="rail">
+    <div>
+      <h1>Virtual Debond</h1>
+      <div class="sub">Removes orthodontic brackets and cement from an intraoral STL</div>
+    </div>
+
+    <section class="step">
+      <h2><i>1</i>Load scans</h2>
+      <div class="row">
+        <label class="btn primary file" id="btn-load">Post-ortho STL<input type="file" id="file" accept=".stl,model/stl,application/sla"></label>
+        <label class="btn file" id="btn-load-pre">+ Pre-ortho STL (optional)<input type="file" id="file-pre" accept=".stl,model/stl,application/sla"></label>
+      </div>
+      <dl class="stats">
+        <dt>Post</dt><dd id="s-file">synthetic sample</dd>
+        <dt>Triangles</dt><dd id="s-tris">–</dd>
+        <dt>Edge length</dt><dd id="s-edge">–</dd>
+        <dt>Pre</dt><dd id="s-pre">none</dd>
+      </dl>
+      <p class="note">Only the post-ortho scan (the one with the brackets) is needed; the holes are then rebuilt from the enamel around each bracket. If you also have the pre-ortho scan, add it: each bracketed tooth is fitted to its own earlier anatomy, which confirms what is a bracket and gives the true surface to rebuild. <button class="link" id="btn-sample">Try the sample</button></p>
+    </section>
+
+    <section class="step">
+      <h2><i>2</i>Check the brackets</h2>
+      <p class="note">Detection runs by itself. <b style="color:var(--flag)">Red</b> parts will be removed; <b style="color:var(--warn)">amber</b> parts were considered and rejected. Click any part to include or exclude it. If a bracket was missed entirely, click on it and it is grabbed from that point.</p>
+      <div class="seg" role="radiogroup" aria-label="Selection">
+        <label><input type="radio" name="sel" id="sel-auto" checked> Pick brackets for me</label>
+        <label><input type="radio" name="sel" id="sel-manual"> I will click each bracket myself</label>
+      </div>
+      <dl class="stats">
+        <dt>Brackets</dt><dd id="s-comps">–</dd>
+        <dt>Points to remove</dt><dd id="s-flag">–</dd>
+        <dt>Arch fit</dt><dd id="s-gfit">–</dd>
+        <dt>Teeth fitted</dt><dd id="s-parts">–</dd>
+        <dt>Tooth fit</dt><dd id="s-rms">–</dd>
+      </dl>
+      <div class="ctl">
+        <label for="p-margin">Ring around each bracket</label><output id="o-margin">0.80 mm</output>
+        <input type="range" id="p-margin" min="0" max="3" step="0.1" value="0.8">
+        <span class="hint">Taken with the bracket to catch the cement flash. Changes show live; the rebuilt surface follows the enamel beyond it.</span>
+      </div>
+      <div class="row">
+        <button id="m-orbit" class="on">Click parts</button>
+        <button id="m-erase">Erase brush</button>
+        <button id="m-add">Add brush</button>
+        <button id="btn-clearpaint">Undo painting</button>
+      </div>
+      <div class="ctl">
+        <label for="p-brush">Brush radius</label><output id="o-brush">1.5 mm</output>
+        <input type="range" id="p-brush" min="0.3" max="5" step="0.1" value="1.5">
+      </div>
+      <p class="note">With a brush, click the surface to paint a spot (dragging still orbits). Erase takes points out of the red area; Add puts them in. Keys <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> switch modes.</p>
+    </section>
+
+    <section class="step">
+      <h2><i>3</i>Remove and rebuild</h2>
+      <div class="row">
+        <button class="primary" id="btn-remove" disabled>Remove brackets</button>
+        <button id="btn-undo" disabled>Undo</button>
+        <button id="btn-reset">Start over</button>
+      </div>
+      <label class="check"><input type="checkbox" id="p-autoremove"> Remove automatically after detection, without waiting for me</label>
+      <dl class="stats">
+        <dt>Holes filled</dt><dd id="s-holes">–</dd>
+        <dt>Patch triangles</dt><dd id="s-patch">–</dd>
+      </dl>
+    </section>
+
+    <section class="step">
+      <h2><i>4</i>Export</h2>
+      <div class="row">
+        <button class="primary" id="btn-export">Export STL</button>
+        <button id="btn-auto">Detect again</button>
+      </div>
+      <p class="note" id="export-note">Binary STL, same units and orientation as the input. Detect again runs a second pass on the current result.</p>
+    </section>
+
+    <details class="adv">
+      <summary>Advanced settings and single steps</summary>
+      <section>
+        <h2>Detection</h2>
+        <div class="ctl">
+          <label for="p-steep">Wall steepness</label><output id="o-steep">55°</output>
+          <input type="range" id="p-steep" min="30" max="80" step="1" value="55">
+          <span class="hint">Angle between a point's normal and the reference tooth surface that counts as a bracket wall. Cusp slopes stay under ~40°.</span>
+          <label for="p-angle">Metal edge angle</label><output id="o-angle">38°</output>
+          <input type="range" id="p-angle" min="18" max="70" step="1" value="38">
+          <span class="hint">Crisp dihedral edges also seed a bracket; most scanners round metal off, so walls do the main work.</span>
+          <label for="p-seed">Seed density</label><output id="o-seed">0.20</output>
+          <input type="range" id="p-seed" min="0.06" max="0.60" step="0.02" value="0.20">
+          <label for="p-prot">Protrusion to grow</label><output id="o-prot">0.30 mm</output>
+          <input type="range" id="p-prot" min="0.10" max="1.50" step="0.05" value="0.30">
+          <span class="hint">Height above the reference tooth surface needed to pull a point into a bracket region.</span>
+          <label for="p-crease">Crease guard</label><output id="o-crease">0.15 mm</output>
+          <input type="range" id="p-crease" min="0.02" max="0.60" step="0.01" value="0.15">
+          <span class="hint">Surface this far below the reference (the gingival sulcus, embrasures) is never crossed, so the removal stays on the crown.</span>
+          <label for="p-min">Smallest part</label><output id="o-min">2.0 mm</output>
+          <input type="range" id="p-min" min="0.5" max="4" step="0.1" value="2">
+          <label for="p-max">Largest part</label><output id="o-max">12 mm</output>
+          <input type="range" id="p-max" min="4" max="20" step="0.5" value="12">
+        </div>
+        <label class="check"><input type="checkbox" id="p-wire"> Keep long parts (archwire, ligatures)</label>
+        <div class="row">
+          <button id="btn-detect">Detect only</button>
+          <button id="btn-clear">Clear selection</button>
+        </div>
+      </section>
+
+      <section>
+        <h2>Pre-ortho match</h2>
+        <div class="ctl">
+          <label for="p-radius">Tooth fit radius</label><output id="o-radius">4.00 mm</output>
+          <input type="range" id="p-radius" min="2.5" max="8" step="0.25" value="4">
+          <span class="hint">Enamel around each candidate used to fit that tooth to the pre scan. Keep it inside one crown.</span>
+          <label for="p-diff">Change threshold</label><output id="o-diff">0.30 mm</output>
+          <input type="range" id="p-diff" min="0.06" max="0.80" step="0.02" value="0.30">
+          <span class="hint">Post-scan points this far above the fitted pre anatomy are added to the removal set.</span>
+          <label for="p-band">Search band</label><output id="o-band">1.00 mm</output>
+          <input type="range" id="p-band" min="0.25" max="6" step="0.25" value="1">
+          <span class="hint">How far beyond a bracket the removal may spread over surface that stands above the pre-ortho anatomy.</span>
+        </div>
+        <label class="check"><input type="checkbox" id="p-usepre" checked> Rebuild holes from the pre-scan anatomy</label>
+        <div class="row">
+          <button id="btn-match" disabled>Match pre scan only</button>
+        </div>
+      </section>
+
+      <section>
+        <h2>Rebuild</h2>
+        <div class="ctl">
+          <label for="p-fill">Patch fullness</label><output id="o-fill">0.70</output>
+          <input type="range" id="p-fill" min="0" max="1" step="0.05" value="0.7">
+          <span class="hint">Without a pre scan: 0 stretches a flat membrane across the hole; 1 continues the surrounding curvature fully. 0.7 tracks a convex crown best in tests.</span>
+        </div>
+      </section>
+    </details>
+
+    <section>
+      <div class="legend">
+        <span style="--c:#d2452c">Will be removed</span>
+        <span style="--c:#e6a838">Rejected candidate</span>
+        <span style="--c:#2e8b5e">Rebuilt surface</span>
+        <span style="--c:#4a7fd4">Pre scan overlay</span>
+      </div>
+    </section>
+  </aside>
+
+  <main class="stage">
+    <canvas id="gl" tabindex="0" aria-label="3D view of the scan"></canvas>
+    <div class="hud">
+      <button id="v-fit" title="Fit view">Fit</button>
+      <button id="v-flat" title="Toggle flat shading">Flat</button>
+      <button id="v-pre" title="Show the aligned pre scan as a translucent overlay" disabled>Pre</button>
+    </div>
+    <div class="status">
+      <div class="bar" id="bar" hidden><i id="bar-i"></i></div>
+      <div class="msg" id="msg">Loading viewer…</div>
+    </div>
+  </main>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+'use strict';
+const $=id=>document.getElementById(id);
+const tick=()=>new Promise(r=>setTimeout(r,0));
+const clamp=(x,a,b)=>x<a?a:x>b?b:x;
+
+/* ------------------------------------------------------------------ status */
+const msgEl=$('msg'), barEl=$('bar'), barI=$('bar-i');
+function status(text,pct,err){
+  msgEl.textContent=text; msgEl.classList.toggle('err',!!err);
+  if(pct==null){barEl.hidden=true;} else {barEl.hidden=false; barI.style.width=(pct*100).toFixed(0)+'%';}
+}
+let busy=false;
+function setBusy(b){ busy=b; for(const id of ['btn-detect','btn-export','btn-sample','btn-auto']) $(id).disabled=b; $('btn-remove').disabled=b||!(state.flag&&state.flag.some(x=>x)); $('file').disabled=b; $('file-pre').disabled=b; $('btn-load').classList.toggle('busy',b); $('btn-load-pre').classList.toggle('busy',b); $('btn-match').disabled=b||!state.pre||!state.mesh; if(!b) $('btn-undo').disabled=state.history.length===0; }
+
+/* --------------------------------------------------------------- STL parse */
+function parseSTL(buffer){
+  const dv=new DataView(buffer), u8=new Uint8Array(buffer);
+  let binary=false;
+  if(buffer.byteLength>=84){ const n=dv.getUint32(80,true); if(84+n*50===buffer.byteLength) binary=true; }
+  if(!binary){
+    const head=new TextDecoder().decode(u8.subarray(0,Math.min(512,u8.length)));
+    if(/^\s*solid/i.test(head) && /facet/i.test(head)) {
+      const text=new TextDecoder().decode(u8);
+      const re=/vertex\s+([-+\d.eE]+)\s+([-+\d.eE]+)\s+([-+\d.eE]+)/g; const arr=[]; let m;
+      while((m=re.exec(text))) arr.push(+m[1],+m[2],+m[3]);
+      return Float32Array.from(arr.slice(0,arr.length-arr.length%9));
+    }
+    binary=true;
+  }
+  const n=Math.floor((buffer.byteLength-84)/50);
+  const out=new Float32Array(n*9); let o=84;
+  for(let i=0;i<n;i++){ o+=12; for(let k=0;k<9;k++){ out[i*9+k]=dv.getFloat32(o,true); o+=4; } o+=2; }
+  return out;
+}
+
+/* Weld coincident corners into shared vertices (1e-4 mm). */
+function weld(raw){
+  const n=raw.length/3, q=1e4;
+  const map=new Map(); const idx=new Uint32Array(n); const pos=[]; const ip=[]; let nv=0;
+  for(let i=0;i<n;i++){
+    const x=raw[3*i],y=raw[3*i+1],z=raw[3*i+2];
+    const ix=Math.round(x*q),iy=Math.round(y*q),iz=Math.round(z*q);
+    const h=(Math.imul(ix|0,73856093)^Math.imul(iy|0,19349663)^Math.imul(iz|0,83492791))>>>0;
+    let list=map.get(h), found=-1;
+    if(list){ for(const j of list){ if(ip[3*j]===ix&&ip[3*j+1]===iy&&ip[3*j+2]===iz){found=j;break;} } }
+    else { list=[]; map.set(h,list); }
+    if(found<0){ found=nv++; pos.push(x,y,z); ip.push(ix,iy,iz); list.push(found); }
+    idx[i]=found;
+  }
+  const tris=[];
+  for(let f=0;f<n/3;f++){ const a=idx[3*f],b=idx[3*f+1],c=idx[3*f+2]; if(a!==b&&b!==c&&a!==c) tris.push(a,b,c); }
+  return {pos:Float32Array.from(pos), tris:Uint32Array.from(tris)};
+}
+
+/* ----------------------------------------------------------- mesh topology */
+function vertexNormals(pos,tris,nv){
+  const vn=new Float32Array(nv*3);
+  for(let f=0;f<tris.length;f+=3){
+    const a=tris[f],b=tris[f+1],c=tris[f+2];
+    const ax=pos[3*a],ay=pos[3*a+1],az=pos[3*a+2];
+    const ux=pos[3*b]-ax,uy=pos[3*b+1]-ay,uz=pos[3*b+2]-az, vx=pos[3*c]-ax,vy=pos[3*c+1]-ay,vz=pos[3*c+2]-az;
+    const nx=uy*vz-uz*vy, ny=uz*vx-ux*vz, nz=ux*vy-uy*vx;
+    vn[3*a]+=nx;vn[3*a+1]+=ny;vn[3*a+2]+=nz; vn[3*b]+=nx;vn[3*b+1]+=ny;vn[3*b+2]+=nz; vn[3*c]+=nx;vn[3*c+1]+=ny;vn[3*c+2]+=nz;
+  }
+  for(let v=0;v<nv;v++){ const x=vn[3*v],y=vn[3*v+1],z=vn[3*v+2]; const l=Math.hypot(x,y,z)||1; vn[3*v]=x/l;vn[3*v+1]=y/l;vn[3*v+2]=z/l; }
+  return vn;
+}
+function buildMesh(pos,tris){
+  const nv=pos.length/3, nt=tris.length/3;
+  const vfStart=new Uint32Array(nv+1);
+  for(let i=0;i<tris.length;i++) vfStart[tris[i]+1]++;
+  for(let v=0;v<nv;v++) vfStart[v+1]+=vfStart[v];
+  const vf=new Uint32Array(tris.length); const fill=vfStart.slice(0,nv);
+  for(let f=0;f<nt;f++){ for(let e=0;e<3;e++){ const v=tris[3*f+e]; vf[fill[v]++]=f; } }
+  const stamp=new Int32Array(nv).fill(-1); const adjStart=new Uint32Array(nv+1); const adj=[];
+  for(let v=0;v<nv;v++){
+    stamp[v]=v;
+    for(let i=vfStart[v];i<vfStart[v+1];i++){ const f=vf[i]; for(let e=0;e<3;e++){ const u=tris[3*f+e]; if(stamp[u]!==v){stamp[u]=v; adj.push(u);} } }
+    adjStart[v+1]=adj.length;
+  }
+  const fn=new Float32Array(nt*3);
+  for(let f=0;f<nt;f++){
+    const a=tris[3*f],b=tris[3*f+1],c=tris[3*f+2];
+    const ux=pos[3*b]-pos[3*a],uy=pos[3*b+1]-pos[3*a+1],uz=pos[3*b+2]-pos[3*a+2], vx=pos[3*c]-pos[3*a],vy=pos[3*c+1]-pos[3*a+1],vz=pos[3*c+2]-pos[3*a+2];
+    let nx=uy*vz-uz*vy, ny=uz*vx-ux*vz, nz=ux*vy-uy*vx; const l=Math.hypot(nx,ny,nz)||1;
+    fn[3*f]=nx/l;fn[3*f+1]=ny/l;fn[3*f+2]=nz/l;
+  }
+  const vn=vertexNormals(pos,tris,nv);
+  let el=0, ec=0; for(let v=0;v<nv;v+=Math.max(1,Math.floor(nv/4000))){ for(let i=adjStart[v];i<adjStart[v+1];i++){ const u=adj[i]; el+=Math.hypot(pos[3*u]-pos[3*v],pos[3*u+1]-pos[3*v+1],pos[3*u+2]-pos[3*v+2]); ec++; } }
+  return {pos,tris,nv,nt,vfStart,vf,adjStart,adj:Uint32Array.from(adj),fn,vn,edgeLen:ec?el/ec:0.15};
+}
+function otherFace(m,a,b,f){
+  const {vfStart,vf,tris}=m;
+  for(let i=vfStart[a];i<vfStart[a+1];i++){ const g=vf[i]; if(g===f) continue; if(tris[3*g]===b||tris[3*g+1]===b||tris[3*g+2]===b) return g; }
+  return -1;
+}
+function edgeLength(m,a,b){ const p=m.pos; return Math.hypot(p[3*a]-p[3*b],p[3*a+1]-p[3*b+1],p[3*a+2]-p[3*b+2]); }
+
+/* ---------------------------------------------------------------- features */
+function computeDihedral(m){
+  const {nv,nt,tris,fn}=m; const maxDih=new Float32Array(nv); const isB=new Uint8Array(nv);
+  for(let f=0;f<nt;f++){
+    for(let e=0;e<3;e++){
+      const a=tris[3*f+e], b=tris[3*f+(e+1)%3]; const g=otherFace(m,a,b,f);
+      if(g<0){ isB[a]=1; isB[b]=1; continue; }
+      if(g<f) continue;
+      const d=fn[3*f]*fn[3*g]+fn[3*f+1]*fn[3*g+1]+fn[3*f+2]*fn[3*g+2];
+      const ang=Math.acos(clamp(d,-1,1))*180/Math.PI;
+      if(ang>maxDih[a]) maxDih[a]=ang; if(ang>maxDih[b]) maxDih[b]=ang;
+    }
+  }
+  return {maxDih,isB};
+}
+/* Reference "tooth without hardware": the surface is binned into 0.4 mm cells, the cell
+   centres are diffused over ~2.5 mm along the surface (same blur whatever the triangle
+   size), and every point is measured against the smoothed cell under it:
+     offset = height above the reference, steep = cos(angle) between the point's normal and
+     the reference normal, thin = an opposing surface sits within 2 mm (incisal edges, scan rims). */
+async function computeReference(m,prog,mask){
+  const {nv,pos,vn}=m; const cell=0.4, inv=1/cell;
+  const key=(ix,iy,iz)=>((ix+4096)*8192+(iy+4096))*8192+(iz+4096);
+  const cmap=new Map(); const cellOf=new Int32Array(nv); const ci=[],cj=[],ck=[]; const sx=[],sy=[],sz=[],nx=[],ny=[],nz=[],cnt=[];
+  cellOf.fill(-1);
+  for(let v=0;v<nv;v++){
+    if(mask&&mask[v]) continue;
+    const ix=Math.floor(pos[3*v]*inv),iy=Math.floor(pos[3*v+1]*inv),iz=Math.floor(pos[3*v+2]*inv); const k=key(ix,iy,iz);
+    let c=cmap.get(k); if(c===undefined){ c=ci.length; cmap.set(k,c); ci.push(ix);cj.push(iy);ck.push(iz); sx.push(0);sy.push(0);sz.push(0);nx.push(0);ny.push(0);nz.push(0);cnt.push(0); }
+    cellOf[v]=c; sx[c]+=pos[3*v];sy[c]+=pos[3*v+1];sz[c]+=pos[3*v+2]; nx[c]+=vn[3*v];ny[c]+=vn[3*v+1];nz[c]+=vn[3*v+2]; cnt[c]++;
+  }
+  const nc=ci.length; const cp=new Float64Array(3*nc), cn=new Float64Array(3*nc), cmag=new Float64Array(nc);
+  for(let c=0;c<nc;c++){ cp[3*c]=sx[c]/cnt[c];cp[3*c+1]=sy[c]/cnt[c];cp[3*c+2]=sz[c]/cnt[c]; const l=Math.hypot(nx[c],ny[c],nz[c]); cmag[c]=l/cnt[c]; cn[3*c]=nx[c]/(l||1);cn[3*c+1]=ny[c]/(l||1);cn[3*c+2]=nz[c]/(l||1); }
+  // cell graph: 26-neighbours, never across to an opposing surface
+  const adjS=new Uint32Array(nc+1); const adjL=[];
+  for(let c=0;c<nc;c++){ for(let dx=-1;dx<=1;dx++) for(let dy=-1;dy<=1;dy++) for(let dz=-1;dz<=1;dz++){ if(!dx&&!dy&&!dz) continue; const o=cmap.get(key(ci[c]+dx,cj[c]+dy,ck[c]+dz)); if(o===undefined) continue;
+      const d=cn[3*c]*cn[3*o]+cn[3*c+1]*cn[3*o+1]+cn[3*c+2]*cn[3*o+2]; if(d>-0.3) adjL.push(o); } adjS[c+1]=adjL.length; }
+  const adjC=Uint32Array.from(adjL);
+  // diffuse positions and normals along the graph
+  let p=Float64Array.from(cp), q=new Float64Array(3*nc), n=Float64Array.from(cn), n2=new Float64Array(3*nc);
+  const lambda=0.6, iters=Math.round((2.5/cell)*(2.5/cell)/lambda); let p1=null,n1=null;
+  // blur twice as long: the first blur gives the reference, the second measures how much smooth
+  // curvature alone sinks under a blur, which is subtracted so convex crowns and cusps read as flat
+  for(let it=0;it<2*iters;it++){
+    for(let c=0;c<nc;c++){ const s0=adjS[c],e0=adjS[c+1]; if(e0===s0){ for(let o=0;o<3;o++){q[3*c+o]=p[3*c+o];n2[3*c+o]=n[3*c+o];} continue; }
+      let ax=0,ay=0,az=0,bx=0,by=0,bz=0; for(let i=s0;i<e0;i++){ const o=adjC[i]; ax+=p[3*o];ay+=p[3*o+1];az+=p[3*o+2]; bx+=n[3*o];by+=n[3*o+1];bz+=n[3*o+2]; }
+      const w=1/(e0-s0); q[3*c]=p[3*c]+lambda*(ax*w-p[3*c]); q[3*c+1]=p[3*c+1]+lambda*(ay*w-p[3*c+1]); q[3*c+2]=p[3*c+2]+lambda*(az*w-p[3*c+2]);
+      let mx=n[3*c]+lambda*(bx*w-n[3*c]), my=n[3*c+1]+lambda*(by*w-n[3*c+1]), mz=n[3*c+2]+lambda*(bz*w-n[3*c+2]); const l=Math.hypot(mx,my,mz)||1; n2[3*c]=mx/l;n2[3*c+1]=my/l;n2[3*c+2]=mz/l; }
+    let t=p;p=q;q=t; t=n;n=n2;n2=t;
+    if(it===iters-1){ p1=Float64Array.from(p); n1=Float64Array.from(n); }
+    if(it%12===11){ prog(it/(2*iters)); await tick(); }
+  }
+  // thin cells: a cell whose own normals cancel, or one with an opposing surface within 2 mm judged on the
+  // smoothed normals (1.6 mm), which still oppose across an incisal edge but not across a bracket slot or wing
+  const thinC=new Uint8Array(nc); const R=4, R2=R*R;
+  for(let c=0;c<nc;c++){ if(cmag[c]<0.45){ thinC[c]=1; continue; }
+    outer: for(let dx=-R;dx<=R;dx++) for(let dy=-R;dy<=R;dy++) for(let dz=-R;dz<=R;dz++){ if(dx*dx+dy*dy+dz*dz>R2) continue; const o=cmap.get(key(ci[c]+dx,cj[c]+dy,ck[c]+dz)); if(o===undefined||cmag[o]<0.45) continue;
+      const d=n[3*c]*n[3*o]+n[3*c+1]*n[3*o+1]+n[3*c+2]*n[3*o+2]; if(d<-0.35){ thinC[c]=1; break outer; } } }
+  const sink=new Float64Array(nc); for(let c=0;c<nc;c++) sink[c]=(p1[3*c]-p[3*c])*n[3*c]+(p1[3*c+1]-p[3*c+1])*n[3*c+1]+(p1[3*c+2]-p[3*c+2])*n[3*c+2];
+  const offset=new Float32Array(nv), offsetC=new Float32Array(nv), steep=new Float32Array(nv), thin=new Uint8Array(nv), refN=new Float32Array(3*nv), free=new Uint8Array(nv);
+  for(let v=0;v<nv;v++){ let c=cellOf[v];
+    if(c<0){ // masked-out point: measure against the nearest surviving cell, else count it as raised
+      const ix=Math.floor(pos[3*v]*inv),iy=Math.floor(pos[3*v+1]*inv),iz=Math.floor(pos[3*v+2]*inv); let bd=Infinity;
+      for(let dx=-2;dx<=2&&bd>0;dx++) for(let dy=-2;dy<=2;dy++) for(let dz=-2;dz<=2;dz++){ const o=cmap.get(key(ix+dx,iy+dy,iz+dz)); if(o===undefined) continue; const dd=dx*dx+dy*dy+dz*dz; if(dd<bd){bd=dd;c=o;} }
+      if(c<0){ offset[v]=1; offsetC[v]=1; steep[v]=1; thin[v]=0; refN[3*v]=vn[3*v];refN[3*v+1]=vn[3*v+1];refN[3*v+2]=vn[3*v+2]; continue; } }
+    offset[v]=(pos[3*v]-p1[3*c])*n1[3*c]+(pos[3*v+1]-p1[3*c+1])*n1[3*c+1]+(pos[3*v+2]-p1[3*c+2])*n1[3*c+2]; offsetC[v]=offset[v]-Math.max(0,sink[c]);
+    steep[v]=vn[3*v]*n1[3*c]+vn[3*v+1]*n1[3*c+1]+vn[3*v+2]*n1[3*c+2]; thin[v]=thinC[c]; refN[3*v]=n1[3*c];refN[3*v+1]=n1[3*c+1];refN[3*v+2]=n1[3*c+2]; }
+  // open in front: nothing of the scan 3–12 mm out along the smoothed normal (facial surfaces face the cheek and lip;
+  // palatal and lingual surfaces, rugae included, face other scanned surface)
+  for(let v=0;v<nv;v++){ const ox=pos[3*v],oy=pos[3*v+1],oz=pos[3*v+2], dx=refN[3*v],dy=refN[3*v+1],dz=refN[3*v+2]; let hit=false;
+    for(let t=3.0;t<=12&&!hit;t+=0.35){ const x=ox+dx*t,y=oy+dy*t,z=oz+dz*t; if(cmap.has(key(Math.floor(x*inv),Math.floor(y*inv),Math.floor(z*inv)))) hit=true; }
+    free[v]=hit?0:1; }
+  return {offset,offsetC,steep,thin,refN,free};
+}
+
+/* --------------------------------------------------------------- detection */
+function growDistance(m,seedFlag,passes,cap,outFlag,distOut){
+  const {nv,adjStart,adj}=m; const dist=distOut||new Float32Array(nv).fill(Infinity); const queue=[];
+  for(let v=0;v<nv;v++) if(seedFlag[v]){ dist[v]=0; outFlag[v]=1; queue.push(v); }
+  let head=0;
+  while(head<queue.length){
+    const v=queue[head++]; const dv=dist[v];
+    for(let i=adjStart[v];i<adjStart[v+1];i++){
+      const u=adj[i]; if(!passes(u)) continue;
+      const nd=dv+edgeLength(m,v,u); if(nd<dist[u]&&nd<=cap){ dist[u]=nd; outFlag[u]=1; queue.push(u); }
+    }
+  }
+}
+function archFrame(m){
+  const idx=sampleIdx(m.nv,6000); const p=pca(m.pos,idx); const up=cross(p.e0,p.e1); return {c:p.c,up};
+}
+/* facial test: the normal lies roughly in the occlusal plane and points away from the arch centre */
+function facialDot(frame,px,py,pz,nx,ny,nz){
+  const {c,up}=frame; const u=nx*up[0]+ny*up[1]+nz*up[2]; if(Math.abs(u)>0.75) return -1;
+  let rx=px-c[0],ry=py-c[1],rz=pz-c[2]; const d=rx*up[0]+ry*up[1]+rz*up[2]; rx-=d*up[0];ry-=d*up[1];rz-=d*up[2]; const l=Math.hypot(rx,ry,rz)||1;
+  return (nx*rx+ny*ry+nz*rz)/l;
+}
+async function detect(){
+  const m=state.mesh, F=state.features; if(!m||!F) return;
+  const {nv,adjStart,adj,pos,vn}=m;
+  const theta=+$('p-angle').value, cosSteep=Math.cos(+$('p-steep').value*Math.PI/180), seedThr=+$('p-seed').value, tau=+$('p-prot').value;
+  const minD=+$('p-min').value, maxD=$('p-wire').checked?400:+$('p-max').value;
+  const {maxDih,offset,offsetC,steep,thin,bnear,frame,refN,free}=F;
+  // facial-ness is judged on the reference tooth surface under each point, so bracket walls (which face every way) still count
+  const facial=new Float32Array(nv); for(let v=0;v<nv;v++) facial[v]=facialDot(frame,pos[3*v],pos[3*v+1],pos[3*v+2],refN[3*v],refN[3*v+1],refN[3*v+2]);
+  // walls: steep against the reference (or a crisp metal edge), standing above it, on a facial surface, not a thin edge or the scan rim
+  let d=new Float32Array(nv); for(let v=0;v<nv;v++) d[v]=(!thin[v]&&!bnear[v]&&free[v]&&offset[v]>0.15&&facial[v]>-0.2&&(steep[v]<cosSteep||maxDih[v]>theta))?1:0;
+  for(let pass=0;pass<2;pass++){ const nd=new Float32Array(nv); for(let v=0;v<nv;v++){ let s=d[v],c=1; for(let i=adjStart[v];i<adjStart[v+1];i++){s+=d[adj[i]];c++;} nd[v]=s/c; } d=nd; }
+  const walls=new Uint8Array(nv); for(let v=0;v<nv;v++) if(d[v]>seedThr) walls[v]=1;
+  const grown=new Uint8Array(nv); growDistance(m,walls,()=>true,0.2,grown);          // walls, slightly thickened
+  // islands: small patches of surface completely enclosed by walls are bracket tops (wing tops, the slot floor)
+  { const seen=new Uint8Array(nv); const stack=[]; const islandMax=Math.min(7,maxD*0.6);
+    for(let v0=0;v0<nv;v0++){ if(grown[v0]||seen[v0]) continue; const verts=[]; stack.length=0; stack.push(v0); seen[v0]=1;
+      let mn=[Infinity,Infinity,Infinity],mx=[-Infinity,-Infinity,-Infinity], open=false;
+      while(stack.length){ const v=stack.pop(); verts.push(v); if(bnear[v]) open=true; for(let k=0;k<3;k++){ const x=pos[3*v+k]; if(x<mn[k])mn[k]=x; if(x>mx[k])mx[k]=x; }
+        if(verts.length>60000){ open=true; break; }
+        for(let i=adjStart[v];i<adjStart[v+1];i++){ const u=adj[i]; if(!grown[u]&&!seen[u]){ seen[u]=1; stack.push(u); } } }
+      if(!open&&Math.hypot(mx[0]-mn[0],mx[1]-mn[1],mx[2]-mn[2])<=islandMax) for(const v of verts) grown[v]=1; } }
+  // a short reach through anything still clearly raised (a wall ring with a gap, hooks, the base pad)
+  const crease=-(+$('p-crease').value);
+  // (a hook or ligature wing reads as 'thin' because its cell's normals cancel; anything that far above the tooth is hardware regardless)
+  growDistance(m,Uint8Array.from(grown),u=>!bnear[u]&&(!thin[u]||offset[u]>0.5)&&facial[u]>-0.3&&offset[u]>crease&&(d[u]>seedThr*0.4||offsetC[u]>tau||(offset[u]>tau&&steep[u]<0.8)),1.2,grown);
+  // connected parts of the grown set become candidates, each scored on what a bracket looks like
+  const candOf=new Int32Array(nv).fill(-1); const cands=[]; const stack=[];
+  for(let v0=0;v0<nv;v0++){
+    if(!grown[v0]||candOf[v0]>=0) continue;
+    const verts=[]; stack.length=0; stack.push(v0); candOf[v0]=cands.length;
+    let mn=[Infinity,Infinity,Infinity],mx=[-Infinity,-Infinity,-Infinity], offSum=0, maxOff=0, nx=0,ny=0,nz=0, cx=0,cy=0,cz=0, fac=0, fr=0, th=0;
+    while(stack.length){ const v=stack.pop(); verts.push(v); const o=Math.max(0,offset[v]); offSum+=Math.max(0,offsetC[v]); if(o>maxOff) maxOff=o; fac+=facial[v]; fr+=free[v]; th+=thin[v];
+      nx+=vn[3*v];ny+=vn[3*v+1];nz+=vn[3*v+2]; for(let k=0;k<3;k++){ const x=pos[3*v+k]; if(x<mn[k])mn[k]=x; if(x>mx[k])mx[k]=x; } cx+=pos[3*v];cy+=pos[3*v+1];cz+=pos[3*v+2];
+      for(let i=adjStart[v];i<adjStart[v+1];i++){ const u=adj[i]; if(grown[u]&&candOf[u]<0){candOf[u]=cands.length;stack.push(u);} } }
+    const n=verts.length; const nl=Math.hypot(nx,ny,nz)||1; cx/=n;cy/=n;cz/=n;
+    let plateau=0; for(const v of verts) if(offset[v]>0.5*maxOff&&steep[v]>0.9) plateau++;
+    const cand={verts,diam:Math.hypot(mx[0]-mn[0],mx[1]-mn[1],mx[2]-mn[2]),meanOff:offSum/n,maxOff,plateau:plateau/n,
+      facial:fac/n,free:fr/n,thinFrac:th/n,center:[cx,cy,cz],normal:[nx/nl,ny/nl,nz/nl],reasons:[],userSet:false,preHeight:NaN,ok:false};
+    if(cand.diam<minD) cand.reasons.push('too small'); if(cand.diam>maxD) cand.reasons.push('too large');
+    if(cand.facial<0.2) cand.reasons.push('not on a facial surface'); if(cand.free<0.5) cand.reasons.push('faces other scanned surface (lingual or palate)'); if(cand.thinFrac>0.45) cand.reasons.push('sits on an edge'); if(cand.maxOff<0.9||(cand.meanOff<0.25&&cand.maxOff<1.2)) cand.reasons.push('barely raised');
+    if(cand.plateau<0.02&&cand.meanOff<0.2) cand.reasons.push('no flat top');
+    if(cand.diam<Math.max(0.8,minD*0.5)){ for(const v of verts) candOf[v]=-1; continue; } // specks are not even shown
+    // second pass over a result: a small raised remnant right beside a rebuilt patch (a hook base, a wing tip, a cement blob) is a leftover
+    if(state.secondLook&&state.isPatch&&cand.maxOff>=0.5&&cand.diam<=2.5&&cand.facial>=0.2){ let nearPatch=0; for(const v of verts){ for(let i=adjStart[v];i<adjStart[v+1];i++) if(state.isPatch[adj[i]]){ nearPatch++; break; } } if(nearPatch>=3){ cand.reasons=cand.reasons.filter(r=>r!=='too small'&&r!=='barely raised'&&r!=='no flat top'); cand.leftover=true; } }
+    if(state.secondLook&&!cand.leftover&&!cand.reasons.length) cand.reasons.push('second look: only small leftovers beside rebuilt areas are taken');
+    cand.accepted=cand.reasons.length===0; cands.push(cand);
+  }
+  // hooks and wing tips often come out as separate specks next to a bracket: fold any small, clearly raised part into an accepted neighbour
+  for(let i=cands.length-1;i>=0;i--){ const c=cands[i]; if(c.accepted||c.maxOff<0.8||c.diam>2.5||c.thinFrac>0.3||c.facial<0.2) continue;
+    let host=-1,hd=Infinity; for(let j=0;j<cands.length;j++){ const h=cands[j]; if(!h.accepted||j===i) continue; const d=Math.hypot(h.center[0]-c.center[0],h.center[1]-c.center[1],h.center[2]-c.center[2])-h.diam/2; if(d<hd){hd=d;host=j;} }
+    if(host<0||hd>1.0) continue; const h=cands[host]; for(const v of c.verts){ h.verts.push(v); candOf[v]=host; } cands.splice(i,1); for(let v=0;v<nv;v++) if(candOf[v]>i) candOf[v]--; }
+  state.cands=cands; state.candOf=candOf; state.parts=null; state.partId=null; state.diff=null;
+  // a second reference built without the candidate parts: enamel next to a bracket then reads flat, the
+  // cement flash reads raised, and the gingival sulcus reads as the crease it is
+  if(cands.length){ status('Measuring the enamel around each part',0.5); await tick();
+    const mask=new Uint8Array(nv); for(const c of cands) for(const v of c.verts) mask[v]=1;
+    const clean=await computeReference(m,p=>status('Measuring the enamel around each part',0.5+0.45*p),mask); F.cleanOffset=clean.offset; F.cleanOffsetC=clean.offsetC; }
+  else { F.cleanOffset=null; F.cleanOffsetC=null; }
+  applySelection();
+}
+/* Turns the current candidate selection (plus hand painting) into the removal set. */
+/* Footprint ring: every same-facing point whose distance IN THE PLANE OF THE TOOTH SURFACE to the part's footprint is
+   within r (the wings stand 1.5 mm proud, so distances along the surface or in 3D would never reach the base pad). */
+function footprintRing(m,cand,r){
+  const {nv,pos}=m; const out=new Uint8Array(nv); if(!cand.verts.length||r<=0) return out;
+  const [nx,ny,nz]=cand.normal, [cx,cy,cz]=cand.center; let ax=1,ay=0,az=0; if(Math.abs(nx)>0.8){ax=0;ay=1;}
+  let ux=ny*az-nz*ay,uy=nz*ax-nx*az,uz=nx*ay-ny*ax; const ul=Math.hypot(ux,uy,uz)||1; ux/=ul;uy/=ul;uz/=ul; const wx=ny*uz-nz*uy,wy=nz*ux-nx*uz,wz=nx*uy-ny*ux;
+  const uv=v=>{ const dx=pos[3*v]-cx,dy=pos[3*v+1]-cy,dz=pos[3*v+2]-cz; return [dx*ux+dy*uy+dz*uz, dx*wx+dy*wy+dz*wz, dx*nx+dy*ny+dz*nz]; };
+  const cell=Math.max(r,0.3), inv=1/cell; const grid=new Map(); const key=(i,j)=>i*100003+j;
+  let umin=Infinity,umax=-Infinity,wmin=Infinity,wmax=-Infinity;
+  for(const v of cand.verts){ const [u,w]=uv(v); const k=key(Math.floor(u*inv),Math.floor(w*inv)); const l=grid.get(k); if(l) l.push(u,w); else grid.set(k,[u,w]); if(u<umin)umin=u;if(u>umax)umax=u;if(w<wmin)wmin=w;if(w>wmax)wmax=w; }
+  const refN=state.features?state.features.refN:null; const r2=r*r;
+  for(let v=0;v<nv;v++){
+    if(refN&&(refN[3*v]*nx+refN[3*v+1]*ny+refN[3*v+2]*nz)<0.3) continue; // same side of the tooth only
+    const [u,w,h]=uv(v); if(u<umin-r||u>umax+r||w<wmin-r||w>wmax+r||Math.abs(h)>3) continue;
+    const ci=Math.floor(u*inv),cj=Math.floor(w*inv); let hit=false;
+    for(let i=ci-1;i<=ci+1&&!hit;i++) for(let j=cj-1;j<=cj+1&&!hit;j++){ const l=grid.get(key(i,j)); if(!l) continue; for(let k=0;k<l.length;k+=2){ const du=l[k]-u,dw=l[k+1]-w; if(du*du+dw*dw<=r2){hit=true;break;} } }
+    if(hit) out[v]=1; }
+  return out;
+}
+/* Concave creases (gingival sulcus, interproximal embrasures) sit below the reference surface; brackets and cement never cross them. */
+function crownOnly(){ const F=state.features; if(!F) return ()=>true; const off=F.cleanOffset||F.offset, thin=F.thin, lim=-(+$('p-crease').value); return u=>off[u]>lim&&!thin[u]; }
+function applySelection(){
+  const m=state.mesh; if(!m) return; const {nv,adjStart,adj}=m; const margin=+$('p-margin').value, auto=$('sel-auto').checked; const onCrown=crownOnly();
+  const base=new Uint8Array(nv), partId=new Int32Array(nv).fill(-1); const cands=state.cands||[]; let nSel=0;
+  for(let ci=0;ci<cands.length;ci++){ const c=cands[ci]; const on=c.userSet?c.accepted:(auto&&c.accepted); c.on=on; if(!on) continue; nSel++;
+    let dil;
+    if(c.extra){ const seed=new Uint8Array(nv); for(const v of c.verts) seed[v]=1; for(const v of c.extra) seed[v]=1; dil=new Uint8Array(nv); growDistance(m,seed,()=>true,0.15,dil); }
+    else { // the first millimetre around a bracket is its own base pad and cement and is always taken; beyond that the crease guard applies
+      dil=footprintRing(m,c,Math.min(margin,1.0)); for(const v of c.verts) dil[v]=1; if(margin>1.0) growDistance(m,Uint8Array.from(dil),onCrown,margin-1.0,dil); }
+    for(let v=0;v<nv;v++) if(dil[v]){ base[v]=1; partId[v]=ci; } }
+  if(state.manualAdd) for(let v=0;v<nv;v++) if(state.manualAdd[v]) base[v]=1;
+  if(state.manualErase) for(let v=0;v<nv;v++) if(state.manualErase[v]) base[v]=0;
+  state.flag=base; state.partId=partId; state.parts=cands;
+  let nf=0; for(let v=0;v<nv;v++) nf+=base[v];
+  $('s-comps').textContent=cands.length?`${nSel} selected · ${cands.length-nSel} other candidate${cands.length-nSel===1?'':'s'}`:'none found';
+  $('s-flag').textContent=nf.toLocaleString();
+  $('btn-remove').disabled=busy||!nf; $('btn-remove').textContent=nSel?`Remove ${nSel} bracket${nSel===1?'':'s'}`:(nf?'Remove painted area':'Remove brackets');
+  updateColors();
+}
+/* Grabs a bracket from one clicked point: everything connected to it that stands above the reference surface or is a steep wall. */
+function grabAt(v0){
+  const m=state.mesh, F=state.features; if(!m||!F) return false;
+  const {nv,pos,vn,adjStart,adj}=m; const {offset,offsetC,steep,bnear}=F; const cosSteep=Math.cos(+$('p-steep').value*Math.PI/180);
+  const seed=new Uint8Array(nv); seed[v0]=1; const reg=new Uint8Array(nv);
+  const crease=-(+$('p-crease').value);
+  growDistance(m,seed,u=>!bnear[u]&&offset[u]>crease&&(offsetC[u]>0.15||steep[u]<cosSteep||offset[u]>0.5),4.5,reg);
+  const verts=[]; let mn=[Infinity,Infinity,Infinity],mx=[-Infinity,-Infinity,-Infinity],cx=0,cy=0,cz=0,nx=0,ny=0,nz=0,offSum=0;
+  for(let v=0;v<nv;v++){ if(!reg[v]) continue; verts.push(v); for(let k=0;k<3;k++){ const x=pos[3*v+k]; if(x<mn[k])mn[k]=x; if(x>mx[k])mx[k]=x; } cx+=pos[3*v];cy+=pos[3*v+1];cz+=pos[3*v+2]; nx+=vn[3*v];ny+=vn[3*v+1];nz+=vn[3*v+2]; offSum+=Math.max(0,offsetC[v]); }
+  const n=verts.length; if(n<10) return false; const nl=Math.hypot(nx,ny,nz)||1;
+  if(!state.candOf) state.candOf=new Int32Array(nv).fill(-1);
+  const ci=state.cands.length;
+  state.cands.push({verts,diam:Math.hypot(mx[0]-mn[0],mx[1]-mn[1],mx[2]-mn[2]),meanOff:offSum/n,maxOff:0,plateau:0,facial:0,center:[cx/n,cy/n,cz/n],normal:[nx/nl,ny/nl,nz/nl],reasons:['picked by hand'],userSet:true,accepted:true,preHeight:NaN,ok:false});
+  for(const v of verts) if(state.candOf[v]<0) state.candOf[v]=ci;
+  applySelection(); status(`Grabbed a ${state.cands[ci].diam.toFixed(1)} mm part from the click. Click it again to drop it.`);
+  return true;
+}
+function toggleCandidate(ci){ const c=state.cands[ci]; c.accepted=!(c.on); c.userSet=true; applySelection(); status(`${c.on?'Included':'Excluded'} candidate ${ci+1}${c.reasons.length?' ('+c.reasons.join(', ')+')':''}.`); }
+
+/* ----------------------------------------------------- remove + hole fill */
+function earClip(pts){
+  const n=pts.length; const prev=new Int32Array(n), next=new Int32Array(n);
+  for(let i=0;i<n;i++){ prev[i]=(i+n-1)%n; next[i]=(i+1)%n; }
+  const area2=(i,j,k)=>(pts[j][0]-pts[i][0])*(pts[k][1]-pts[i][1])-(pts[j][1]-pts[i][1])*(pts[k][0]-pts[i][0]);
+  const isConvex=i=>area2(prev[i],i,next[i])>1e-12;
+  const inTri=(p,a,b,c)=>area2(a,b,p)>=-1e-12&&area2(b,c,p)>=-1e-12&&area2(c,a,p)>=-1e-12;
+  const reflex=new Set(); for(let i=0;i<n;i++) if(!isConvex(i)) reflex.add(i);
+  const tris=[]; let remaining=n, cur=0;
+  const upd=v=>{ if(isConvex(v)) reflex.delete(v); else reflex.add(v); };
+  while(remaining>3){
+    let found=false, i=cur;
+    for(let k=0;k<remaining;k++){
+      const a=prev[i], c=next[i];
+      if(!reflex.has(i)){
+        let ok=true; for(const r of reflex){ if(r===a||r===c) continue; if(inTri(r,a,i,c)){ok=false;break;} }
+        if(ok){ tris.push([a,i,c]); next[a]=c; prev[c]=a; remaining--; upd(a); upd(c); cur=c; found=true; break; }
+      }
+      i=next[i];
+    }
+    if(!found){
+      let best=cur, bv=-Infinity; i=cur;
+      for(let k=0;k<remaining;k++){ const v=area2(prev[i],i,next[i]); if(v>bv){bv=v;best=i;} i=next[i]; }
+      const a=prev[best], c=next[best]; if(bv>0) tris.push([a,best,c]);
+      next[a]=c; prev[c]=a; reflex.delete(best); remaining--; upd(a); upd(c); cur=c;
+    }
+  }
+  if(area2(prev[cur],cur,next[cur])>0) tris.push([prev[cur],cur,next[cur]]);
+  return tris;
+}
+const EK=67108864;
+const ekey=(a,b)=>a<b?a*EK+b:b*EK+a;
+function edgeMap(ptris){ const em=new Map(); for(let t=0;t<ptris.length;t++){ const tr=ptris[t]; for(let e=0;e<3;e++){ const k=ekey(tr[e],tr[(e+1)%3]); const l=em.get(k); if(l) l.push(t); else em.set(k,[t]); } } return em; }
+
+async function removeAndFill(){
+  const m=state.mesh, flag=state.flag; const {nv,nt,tris,pos,vn,adjStart,adj}=m;
+  if(!flag.some(x=>x)){ status('Nothing is flagged. Detect brackets or paint a region first.',null,true); return; }
+  status('Tracing hole outlines',0.05); await tick();
+  const keep=new Uint8Array(nt); let loops=[];
+  const trace=()=>{
+    keep.fill(0); let nk=0;
+    for(let f=0;f<nt;f++){ if(!flag[tris[3*f]]&&!flag[tris[3*f+1]]&&!flag[tris[3*f+2]]){keep[f]=1;nk++;} }
+    const out=new Map();
+    for(let f=0;f<nt;f++){ if(!keep[f]) continue;
+      for(let e=0;e<3;e++){ const a=tris[3*f+e], b=tris[3*f+(e+1)%3]; const g=otherFace(m,a,b,f);
+        if(g>=0&&!keep[g]){ const l=out.get(a); if(l) l.push(b); else out.set(a,[b]); } } }
+    loops=[];
+    for(const [a0] of out){
+      while(out.get(a0)&&out.get(a0).length){
+        let loop=[a0]; const at=new Map([[a0,0]]); let cur=a0, ok=false;
+        for(let guard=0;guard<50000;guard++){ const l=out.get(cur); if(!l||!l.length) break; const nx=l.pop(); if(nx===a0){ok=true;break;}
+          const k=at.get(nx);
+          if(k!==undefined){ // the outline touches itself here: close off the sub-loop as its own hole and carry on from the pinch
+            const sub=loop.slice(k); if(sub.length>=3) loops.push(sub); for(let i=k+1;i<loop.length;i++) at.delete(loop[i]); loop=loop.slice(0,k+1); cur=nx; continue; }
+          loop.push(nx); at.set(nx,loop.length-1); cur=nx; }
+        if(ok&&loop.length>=3) loops.push(loop);
+      }
+    }
+    return nk;
+  };
+  trace();
+  const newPos=[]; let newCount=0; const patchTris=[]; let preHits=0, preTotal=0, preSkipped=0;
+  const addV=(x,y,z)=>{ newPos.push(x,y,z); return nv+newCount++; };
+  const P=i=>i<nv?[pos[3*i],pos[3*i+1],pos[3*i+2]]:[newPos[3*(i-nv)],newPos[3*(i-nv)+1],newPos[3*(i-nv)+2]];
+  let filled=0;
+  for(let li=0;li<loops.length;li++){
+    status(`Filling hole ${li+1} of ${loops.length}`,0.1+0.85*li/loops.length); await tick();
+    const added=fillHole(loops[li]);
+    if(added) filled++;
+  }
+
+  function fillHole(loop0){
+    let loop=loop0; const n=loop.length; if(n>8000) return false;
+    let nx=0,ny=0,nz=0; for(const v of loop){nx+=vn[3*v];ny+=vn[3*v+1];nz+=vn[3*v+2];}
+    const nl=Math.hypot(nx,ny,nz); if(nl<1e-6) return false; nx/=nl;ny/=nl;nz/=nl;
+    let ax=1,ay=0,az=0; if(Math.abs(nx)>0.8){ax=0;ay=1;}
+    let ux=ny*az-nz*ay, uy=nz*ax-nx*az, uz=nx*ay-ny*ax; const ul=Math.hypot(ux,uy,uz); ux/=ul;uy/=ul;uz/=ul;
+    const wx=ny*uz-nz*uy, wy=nz*ux-nx*uz, wz=nx*uy-ny*ux;
+    const p0=P(loop[0]);
+    const proj=i=>{ const p=P(i); const dx=p[0]-p0[0],dy=p[1]-p0[1],dz=p[2]-p0[2]; return [dx*ux+dy*uy+dz*uz, dx*wx+dy*wy+dz*wz]; };
+    let pts=loop.map(proj);
+    let area=0; for(let i=0;i<n;i++){ const a=pts[i],b=pts[(i+1)%n]; area+=a[0]*b[1]-b[0]*a[1]; }
+    if(area<0){ loop=loop.slice().reverse(); pts.reverse(); }
+    const tri=earClip(pts); if(!tri.length) return false;
+    const ptris=tri.map(([i,j,k])=>[loop[i],loop[j],loop[k]]);
+    let bl=0; for(let i=0;i<n;i++){ const a=P(loop[i]),b=P(loop[(i+1)%n]); bl+=Math.hypot(a[0]-b[0],a[1]-b[1],a[2]-b[2]); }
+    const target=bl/n;
+    const ang=(c,a,b)=>{ const cx=a[0]-c[0],cy=a[1]-c[1],dx=b[0]-c[0],dy=b[1]-c[1]; return Math.atan2(Math.abs(cx*dy-cy*dx),cx*dx+cy*dy); };
+    const a2=(p,q,r)=>(q[0]-p[0])*(r[1]-p[1])-(q[1]-p[1])*(r[0]-p[0]);
+    // edge flips toward Delaunay in the projection plane
+    const flipPasses=max=>{
+      for(let pass=0;pass<max;pass++){
+        const em=edgeMap(ptris); const touched=new Set(); let flips=0;
+        for(const [k,l] of em){ if(l.length!==2) continue; const t1=l[0],t2=l[1]; if(touched.has(t1)||touched.has(t2)) continue;
+          const a=Math.floor(k/EK), b=k%EK; const c=ptris[t1].find(v=>v!==a&&v!==b), d=ptris[t2].find(v=>v!==a&&v!==b); if(c===undefined||d===undefined||c===d) continue;
+          const pa=proj(a),pb=proj(b),pc=proj(c),pd=proj(d);
+          if(ang(pc,pa,pb)+ang(pd,pa,pb)<=Math.PI+1e-6) continue;
+          let A=a,B=b; if(a2(pa,pb,pc)<0){A=b;B=a;}
+          const pA=proj(A),pB=proj(B);
+          if(a2(pA,pd,pc)<=1e-12||a2(pB,pc,pd)<=1e-12) continue;
+          ptris[t1]=[A,d,c]; ptris[t2]=[B,c,d]; touched.add(t1); touched.add(t2); flips++;
+        }
+        if(!flips) break;
+      }
+    };
+    flipPasses(10);
+    // refine: split long interior edges at their midpoints, re-flipping after each round
+    for(let pass=0;pass<40;pass++){
+      const em=edgeMap(ptris); const cand=[];
+      const tq=t=>{ const pa=P(t[0]),pb=P(t[1]),pc=P(t[2]); const ux=pb[0]-pa[0],uy=pb[1]-pa[1],uz=pb[2]-pa[2],vx=pc[0]-pa[0],vy=pc[1]-pa[1],vz=pc[2]-pa[2]; const area=0.5*Math.hypot(uy*vz-uz*vy,uz*vx-ux*vz,ux*vy-uy*vx); const l2=ux*ux+uy*uy+uz*uz+vx*vx+vy*vy+vz*vz+(pc[0]-pb[0])**2+(pc[1]-pb[1])**2+(pc[2]-pb[2])**2; return 4*Math.sqrt(3)*area/(l2+1e-12); };
+      for(const [k,l] of em){ if(l.length!==2) continue; if(tq(ptris[l[0]])<0.02||tq(ptris[l[1]])<0.02) continue; // never split a degenerate (collinear) triangle
+        const a=Math.floor(k/EK), b=k%EK; const pa=P(a),pb=P(b); const len=Math.hypot(pa[0]-pb[0],pa[1]-pb[1],pa[2]-pb[2]); if(len>target*1.5) cand.push([len,a,b,l[0],l[1]]); }
+      if(!cand.length) break;
+      cand.sort((x,y)=>y[0]-x[0]); const touched=new Set(); let splits=0;
+      for(const [len,a,b,t1,t2] of cand){
+        if(touched.has(t1)||touched.has(t2)) continue;
+        const pa=P(a),pb=P(b); const mid=addV((pa[0]+pb[0])/2,(pa[1]+pb[1])/2,(pa[2]+pb[2])/2);
+        for(const t of [t1,t2]){ const tr=ptris[t]; const ta=tr.map(v=>v===b?mid:v), tb=tr.map(v=>v===a?mid:v); ptris[t]=ta; ptris.push(tb); touched.add(t); touched.add(ptris.length-1); }
+        splits++;
+      }
+      if(!splits) break;
+      flipPasses(4);
+    }
+    flipPasses(10);
+    fair(ptris,loop);
+    polish(ptris);
+    for(const t of ptris) patchTris.push(t);
+    return true;
+  }
+
+  /* Rim slivers from ear-clipping a jagged outline: slide the new vertices along the surface toward their
+     neighbours' centroid (no change in shape) and flip interior edges wherever that improves triangle quality. */
+  function polish(ptris){
+    const q3=(a,b,c)=>{ const pa=P(a),pb=P(b),pc=P(c); const l0=Math.hypot(pa[0]-pb[0],pa[1]-pb[1],pa[2]-pb[2]),l1=Math.hypot(pb[0]-pc[0],pb[1]-pc[1],pb[2]-pc[2]),l2=Math.hypot(pc[0]-pa[0],pc[1]-pa[1],pc[2]-pa[2]);
+      const s=(l0+l1+l2)/2; const area=Math.sqrt(Math.max(0,s*(s-l0)*(s-l1)*(s-l2))); return 4*Math.sqrt(3)*area/(l0*l0+l1*l1+l2*l2+1e-12); };
+    const tn=(a,b,c)=>{ const pa=P(a),pb=P(b),pc=P(c); const ux=pb[0]-pa[0],uy=pb[1]-pa[1],uz=pb[2]-pa[2],vx=pc[0]-pa[0],vy=pc[1]-pa[1],vz=pc[2]-pa[2]; return [uy*vz-uz*vy,uz*vx-ux*vz,ux*vy-uy*vx]; };
+    for(let round=0;round<4;round++){
+      // tangential relaxation of the new vertices
+      const nb=new Map(), nrm=new Map();
+      for(const t of ptris){ const fn=tn(t[0],t[1],t[2]); for(let e=0;e<3;e++){ const a=t[e]; if(a<nv) continue; let s=nb.get(a); if(!s){ s=new Set(); nb.set(a,s); nrm.set(a,[0,0,0]); } s.add(t[(e+1)%3]); s.add(t[(e+2)%3]); const g=nrm.get(a); g[0]+=fn[0];g[1]+=fn[1];g[2]+=fn[2]; } }
+      for(let it=0;it<4;it++){
+        for(const [a,s] of nb){ let cx=0,cy=0,cz=0,c=0; for(const u of s){ const p=P(u); cx+=p[0];cy+=p[1];cz+=p[2]; c++; } cx/=c;cy/=c;cz/=c;
+          const p=P(a); let dx=cx-p[0],dy=cy-p[1],dz=cz-p[2]; const g=nrm.get(a); const gl=Math.hypot(g[0],g[1],g[2])||1; const nx=g[0]/gl,ny=g[1]/gl,nz=g[2]/gl; const d=dx*nx+dy*ny+dz*nz; dx-=d*nx;dy-=d*ny;dz-=d*nz;
+          const j=3*(a-nv); newPos[j]+=0.5*dx; newPos[j+1]+=0.5*dy; newPos[j+2]+=0.5*dz; } }
+      // quality flips
+      const em=edgeMap(ptris); const touched=new Set(); let flips=0;
+      for(const [k,l] of em){ if(l.length!==2) continue; const t1=l[0],t2=l[1]; if(touched.has(t1)||touched.has(t2)) continue;
+        const a=Math.floor(k/EK), b=k%EK; const c=ptris[t1].find(v=>v!==a&&v!==b), d=ptris[t2].find(v=>v!==a&&v!==b); if(c===undefined||d===undefined||c===d) continue;
+        const before=Math.min(q3(a,b,c),q3(a,b,d)); const after=Math.min(q3(a,d,c),q3(b,c,d)); if(after<before*1.15) continue;
+        // keep orientation consistent with the old pair
+        const n1=tn(ptris[t1][0],ptris[t1][1],ptris[t1][2]); let A=a,B=b; { const i=ptris[t1].indexOf(a); if(ptris[t1][(i+1)%3]!==b){A=b;B=a;} }
+        const m1=tn(A,d,c), m2=tn(B,c,d); if(m1[0]*n1[0]+m1[1]*n1[1]+m1[2]*n1[2]<=0||m2[0]*n1[0]+m2[1]*n1[1]+m2[2]*n1[2]<=0) continue;
+        ptris[t1]=[A,d,c]; ptris[t2]=[B,c,d]; touched.add(t1); touched.add(t2); flips++; }
+      if(!flips&&round>1) break;
+    }
+  }
+
+  /* Biharmonic fairing: the new vertices are solved from K²x = 0 (K = graph
+     Laplacian) with the hole rim and the ring outside it fixed, so the patch
+     meets the surrounding surface with continuous curvature. Conjugate
+     gradient on the symmetric positive-definite interior block. */
+  function fair(ptris,loop){
+    let part=null; if(state.parts&&state.pre&&$('p-usepre').checked&&state.partId){ for(const v of loop){ for(let i=adjStart[v];i<adjStart[v+1];i++){ const u=adj[i]; if(flag[u]&&state.partId[u]>=0){ part=state.parts[state.partId[u]]; break; } } if(part) break; } if(part&&!part.ok) part=null; }
+    // the pre scan is only a safe guide for this hole if the rim around it actually sits on the fitted pre surface;
+    // a tooth that changed (a deciduous tooth replaced, a crown that was reshaped) gives a rim that disagrees badly
+    if(part&&state.diff){ let n=0,bad=0; for(const v of loop){ const d=state.diff[v]; if(isNaN(d)) continue; n++; if(Math.abs(d)>0.5) bad++; } if(n&&bad/n>0.15){ part=null; preSkipped++; } }
+    const nb=new Map(); const add=(a,b)=>{ let s=nb.get(a); if(!s){s=new Set();nb.set(a,s);} s.add(b); };
+    for(const t of ptris){ for(let e=0;e<3;e++){ const a=t[e],b=t[(e+1)%3]; add(a,b); add(b,a); } }
+    for(const v of loop){ for(let i=adjStart[v];i<adjStart[v+1];i++){ const u=adj[i]; if(!flag[u]) add(v,u); } }
+    const I=[],B=[]; for(const g of nb.keys()){ if(g>=nv) I.push(g); else B.push(g); }
+    if(!I.length) return;
+    const ids=[]; const loc=new Map(); const L=g=>{ let l=loc.get(g); if(l===undefined){ l=ids.length; ids.push(g); loc.set(g,l);} return l; };
+    for(const g of I) L(g); for(const g of B) L(g); for(const s of nb.values()) for(const g of s) L(g);
+    const N=ids.length, nI=I.length, nIB=I.length+B.length;   // locals 0..nI-1 = interior, nI..nIB-1 = rim, rest fixed ring
+    const nbrs=new Array(nIB); for(let l=0;l<nIB;l++) nbrs[l]=Int32Array.from([...nb.get(ids[l])].map(L));
+    const deg=new Float64Array(nIB); for(let l=0;l<nIB;l++) deg[l]=nbrs[l].length;
+    const X=new Float64Array(3*N); for(let l=0;l<N;l++){ const p=P(ids[l]); X[3*l]=p[0];X[3*l+1]=p[1];X[3*l+2]=p[2]; }
+    // warm start: harmonic (membrane) solution by Gauss-Seidel
+    for(let k=0;k<200;k++){ for(let l=0;l<nI;l++){ const nb_=nbrs[l]; for(let o=0;o<3;o++){ let s=0; for(let i=0;i<nb_.length;i++) s+=X[3*nb_[i]+o]; X[3*l+o]=s/nb_.length; } } }
+    const XH=Float64Array.from(X);
+    // operator: y (length N, one coordinate) -> (K²y) on interior
+    const Ky=new Float64Array(nIB);
+    const applyK2=(y,out)=>{
+      for(let l=0;l<nIB;l++){ const nb_=nbrs[l]; let s=0; for(let i=0;i<nb_.length;i++) s+=y[nb_[i]]; Ky[l]=deg[l]*y[l]-s; }
+      for(let l=0;l<nI;l++){ const nb_=nbrs[l]; let s=0; for(let i=0;i<nb_.length;i++) s+=Ky[nb_[i]]; out[l]=deg[l]*Ky[l]-s; }
+    };
+    const diag=new Float64Array(nI); for(let l=0;l<nI;l++) diag[l]=deg[l]*deg[l]+deg[l];
+    const y=new Float64Array(N), r=new Float64Array(nI), z=new Float64Array(nI), p=new Float64Array(N), Ap=new Float64Array(nI);
+    for(let o=0;o<3;o++){
+      for(let l=0;l<N;l++) y[l]=X[3*l+o];
+      applyK2(y,r); for(let l=0;l<nI;l++) r[l]=-r[l];
+      let rz=0; for(let l=0;l<nI;l++){ z[l]=r[l]/diag[l]; rz+=r[l]*z[l]; }
+      p.fill(0); for(let l=0;l<nI;l++) p[l]=z[l];
+      const tol=1e-10*Math.max(1,rz);
+      for(let it=0;it<4000&&rz>tol;it++){
+        applyK2(p,Ap); let pAp=0; for(let l=0;l<nI;l++) pAp+=p[l]*Ap[l]; if(pAp<=0) break;
+        const alpha=rz/pAp; for(let l=0;l<nI;l++){ y[l]+=alpha*p[l]; r[l]-=alpha*Ap[l]; }
+        let rzn=0; for(let l=0;l<nI;l++){ z[l]=r[l]/diag[l]; rzn+=r[l]*z[l]; }
+        const beta=rzn/rz; rz=rzn; for(let l=0;l<nI;l++) p[l]=z[l]+beta*p[l];
+      }
+      for(let l=0;l<nI;l++) X[3*l+o]=y[l];
+    }
+    // blend toward the membrane solution: pure biharmonic over-bulges on doubly convex crowns
+    const kappa=+$('p-fill').value; for(let l=0;l<3*nI;l++) X[l]=XH[l]+kappa*(X[l]-XH[l]);
+    if(part){ // snap the patch onto the fitted pre-treatment anatomy where the rim agrees with it
+      const pre=state.pre, thr=+$('p-diff').value; let hit=0;
+      // rim trust: 1 where the post rim already sits on the pre surface, 0 where the pre surface is elsewhere (moved gingiva, neighbour tooth)
+      const W=new Float64Array(nIB).fill(1);
+      for(let l=nI;l<nIB;l++){ const d=state.diff?state.diff[ids[l]]:NaN; W[l]=isNaN(d)?0:clamp(1-(Math.abs(d)-thr)/0.5,0,1); }
+      // interior trust fades in over ~1 mm from any untrusted rim segment
+      const dist=new Float64Array(nIB).fill(Infinity); const q=[];
+      for(let l=nI;l<nIB;l++) if(W[l]<0.5){ dist[l]=0; q.push(l); }
+      for(let h=0;h<q.length;h++){ const a=q[h]; const nb_=nbrs[a]; for(let i=0;i<nb_.length;i++){ const b=nb_[i]; if(b>=nI) continue; const nd=dist[a]+Math.hypot(X[3*a]-X[3*b],X[3*a+1]-X[3*b+1],X[3*a+2]-X[3*b+2]); if(nd<dist[b]&&nd<1.0){ dist[b]=nd; q.push(b); } } }
+      for(let l=0;l<nI;l++) W[l]=Math.min(1,dist[l]/1.0);
+      // project every patch and rim point onto the fitted pre anatomy (in the post frame)
+      const Q=new Float64Array(3*nIB), hitQ=new Uint8Array(nIB);
+      for(let l=0;l<nIB;l++){ const p=mulv(part.R,X[3*l],X[3*l+1],X[3*l+2]); const c=closestOnPre(part.grid,pre,p[0]+part.t[0],p[1]+part.t[1],p[2]+part.t[2],1.2);
+        if(!c) continue; const q=mulvT(part.R,c.x-part.t[0],c.y-part.t[1],c.z-part.t[2]); Q[3*l]=q[0];Q[3*l+1]=q[1];Q[3*l+2]=q[2]; hitQ[l]=1; }
+      // residual of the post rim against the pre surface, interpolated harmonically across the patch:
+      // the pre scan supplies the anatomy, this correction absorbs any small rigid-fit error so the patch meets the rim exactly
+      const C=new Float64Array(3*nIB);
+      for(let l=nI;l<nIB;l++){ if(hitQ[l]){ C[3*l]=X[3*l]-Q[3*l];C[3*l+1]=X[3*l+1]-Q[3*l+1];C[3*l+2]=X[3*l+2]-Q[3*l+2]; } }
+      for(let k=0;k<300;k++){ for(let l=0;l<nI;l++){ const nb_=nbrs[l]; for(let o=0;o<3;o++){ let s=0; for(let i=0;i<nb_.length;i++) s+=C[3*nb_[i]+o]; C[3*l+o]=s/nb_.length; } } }
+      for(let l=0;l<nI;l++){ if(!hitQ[l]) continue; const w=W[l];
+        for(let o=0;o<3;o++) X[3*l+o]+=w*((Q[3*l+o]+C[3*l+o])-X[3*l+o]); if(w>0.5) hit++; }
+      for(let k=0;k<3;k++){ for(let l=0;l<nI;l++){ const nb_=nbrs[l]; for(let o=0;o<3;o++){ let s=0; for(let i=0;i<nb_.length;i++) s+=X[3*nb_[i]+o]; X[3*l+o]+=0.3*(s/nb_.length-X[3*l+o]); } } }
+      preHits+=hit; preTotal+=nI;
+    }
+    for(let l=0;l<nI;l++){ const j=3*(ids[l]-nv); newPos[j]=X[3*l];newPos[j+1]=X[3*l+1];newPos[j+2]=X[3*l+2]; }
+  }
+
+  status('Rebuilding mesh',0.97); await tick();
+  const totalV=nv+newCount; const used=new Int32Array(totalV).fill(-1); const outTris=[];
+  for(let f=0;f<nt;f++) if(keep[f]) outTris.push(tris[3*f],tris[3*f+1],tris[3*f+2]);
+  for(const t of patchTris) outTris.push(t[0],t[1],t[2]);
+  let nvNew=0; for(const v of outTris) if(used[v]<0) used[v]=nvNew++;
+  const npos=new Float32Array(nvNew*3); const isPatch=new Uint8Array(nvNew);
+  for(let v=0;v<totalV;v++){ const l=used[v]; if(l<0) continue; const p=P(v); npos[3*l]=p[0];npos[3*l+1]=p[1];npos[3*l+2]=p[2]; if(v>=nv) isPatch[l]=1; }
+  const ntris=new Uint32Array(outTris.length); for(let i=0;i<outTris.length;i++) ntris[i]=used[outTris[i]];
+  // carry forward patch marks from earlier passes
+  if(state.isPatch){ for(let v=0;v<nv;v++){ const l=used[v]; if(l>=0&&state.isPatch[v]) isPatch[l]=1; } }
+  state.history.push({mesh:m,isPatch:state.isPatch,features:state.features,cands:state.cands,candOf:state.candOf}); if(state.history.length>6) state.history.shift();
+  state.mesh=buildMesh(npos,ntris); state.isPatch=isPatch; state.flag=new Uint8Array(nvNew); state.features=null; state.comps=0; state.parts=null; state.partId=null; state.cands=[]; state.candOf=null; state.manualAdd=null; state.manualErase=null; state.diff=null; $('btn-remove').disabled=true; $('btn-remove').textContent='Remove brackets'; $('s-comps').textContent='–';
+  $('s-holes').textContent=filled; $('s-patch').textContent=patchTris.length.toLocaleString();
+  $('s-comps').textContent='–'; $('s-flag').textContent='0';
+  showMesh(false);
+  status(preTotal?`${filled} hole${filled===1?'':'s'} filled from the pre-scan anatomy (${Math.round(100*preHits/preTotal)}% of patch points landed on it${preSkipped?`; ${preSkipped} hole${preSkipped===1?'':'s'} rebuilt from enamel instead because the pre scan disagreed around them`:''}). Export, or Run again for a second pass if anything remains.`:`${filled} hole${filled===1?'':'s'} filled from the surrounding enamel. Export, or Run again if anything remains.`);
+}
+
+/* ------------------------------------------------------------------ sample */
+function makeSample(pre){
+  const res=0.15, L=46, H=11, Ra=24;
+  const ns=Math.round(L/res)+1, nt=Math.round(H/res)+1;
+  const widths=[7.0,6.5,8.5,8.5,6.5,7.0]; const teeth=[]; let s=1.0; for(const w of widths){ teeth.push({c:s+w/2,w}); s+=w; }
+  // pre-treatment: the same crowns, each slightly displaced and tipped (orthodontic movement), no brackets
+  const shift=pre?[0.6,-0.5,0.3,-0.4,0.5,-0.6]:[0,0,0,0,0,0]; const tip=pre?[0.08,-0.06,0.05,-0.05,0.07,-0.08]:[0,0,0,0,0,0];
+  const ss=(a,b,x)=>{ const t=clamp((x-a)/(b-a),0,1); return t*t*(3-2*t); };
+  const height=(s,t)=>{
+    // crown: a rigid shape in each tooth's own frame (lobes + a cervical taper); gingiva: a tissue surface fixed in the arch that covers the crown's neck
+    let crown=-Infinity, bracket=0;
+    teeth.forEach((th,i)=>{ const ca=Math.cos(tip[i]),sa=Math.sin(tip[i]); const u=ca*(s-th.c-shift[i])+sa*(t-6.5), v=-sa*(s-th.c-shift[i])+ca*(t-6.5); const ds=u/(th.w/2);
+      if(Math.abs(ds)<1.05&&v>-6.5){ const p=Math.max(0,1-ds*ds); const vert=1-0.35*Math.pow(v/5,2); let c=1.6*Math.pow(p,0.7)*vert+0.12*Math.cos(ds*4.5)*Math.max(0,1-Math.abs(v)/3.5); if(v<-2.8) c-=0.35*(-2.8-v); if(c>crown) crown=c; } });
+    const gumZ=0.55-0.22*Math.max(0,t-2.0);
+    let z=Math.max(crown,gumZ)-0.8;
+    if(pre) return z;
+    if(pre) return z;
+    // twin-wing brackets with a cement skirt, rounded off the way a scanner renders metal
+    const bracketAt=(s,t)=>{ let bb=0; for(const th of teeth){ const ax=Math.abs(s-th.c), ay=Math.abs(t-6.0); let b=0;
+      if(ax<1.75&&ay<1.6) b=0.55;
+      if(ax<1.55&&ay<1.45&&ay>0.45) b=1.7;
+      if(ax<1.55&&ay<=0.45) b=1.1;
+      const r=Math.max(ax-1.75,ay-1.6); if(r>0&&r<1.6) b=Math.max(b,0.28*(1-r/1.6));
+      bb=Math.max(bb,b); } return bb; };
+    for(let a=-1;a<=1;a++) for(let b=-1;b<=1;b++) bracket+=bracketAt(s+a*0.2,t+b*0.2)/9;
+    return z+bracket;
+  };
+  const pos=new Float32Array(ns*nt*3); let k=0;
+  for(let j=0;j<nt;j++){ const t=j*res; for(let i=0;i<ns;i++){ const sv=i*res; const ang=(sv-L/2)/Ra; const r=Ra+height(sv,t);
+    let X=r*Math.sin(ang), Y=r*Math.cos(ang)-Ra, Z=t;
+    if(pre){ const ca=Math.cos(0.35),sa=Math.sin(0.35), cb=Math.cos(0.12),sb=Math.sin(0.12); let x1=ca*X-sa*Y, y1=sa*X+ca*Y, z1=Z; let y2=cb*y1-sb*z1, z2=sb*y1+cb*z1; X=x1+5; Y=y2-3; Z=z2+2; }
+    pos[k++]=X; pos[k++]=Y; pos[k++]=Z; } }
+  const tris=new Uint32Array((ns-1)*(nt-1)*6); k=0;
+  for(let j=0;j<nt-1;j++) for(let i=0;i<ns-1;i++){ const a=j*ns+i,b=a+1,c=a+ns,d=c+1; tris[k++]=a;tris[k++]=c;tris[k++]=b; tris[k++]=b;tris[k++]=c;tris[k++]=d; }
+  return {pos,tris};
+}
+
+
+/* ------------------------------------------------------- pre-scan matching */
+function sampleIdx(n,k){ const step=Math.max(1,Math.floor(n/k)); const out=[]; for(let i=0;i<n;i+=step) out.push(i); return out; }
+function makeGrid(pos,idxList,cell){
+  const inv=1/cell; const map=new Map();
+  const key=(ix,iy,iz)=>((ix+2048)*4096+(iy+2048))*4096+(iz+2048);
+  for(const v of idxList){ const k=key(Math.floor(pos[3*v]*inv),Math.floor(pos[3*v+1]*inv),Math.floor(pos[3*v+2]*inv)); const l=map.get(k); if(l) l.push(v); else map.set(k,[v]); }
+  return { nearest(x,y,z,maxDist){
+    const r=Math.ceil(maxDist*inv), cx=Math.floor(x*inv),cy=Math.floor(y*inv),cz=Math.floor(z*inv); let best=-1,bd=maxDist*maxDist;
+    for(let ix=cx-r;ix<=cx+r;ix++) for(let iy=cy-r;iy<=cy+r;iy++) for(let iz=cz-r;iz<=cz+r;iz++){ const l=map.get(key(ix,iy,iz)); if(!l) continue;
+      for(let i=0;i<l.length;i++){ const v=l[i]; const dx=pos[3*v]-x,dy=pos[3*v+1]-y,dz=pos[3*v+2]-z; const d2=dx*dx+dy*dy+dz*dz; if(d2<bd){bd=d2;best=v;} } }
+    return best; } };
+}
+function closestPtTri(px,py,pz,a,b,c,pos,out){
+  const ax=pos[3*a],ay=pos[3*a+1],az=pos[3*a+2];
+  const abx=pos[3*b]-ax,aby=pos[3*b+1]-ay,abz=pos[3*b+2]-az, acx=pos[3*c]-ax,acy=pos[3*c+1]-ay,acz=pos[3*c+2]-az;
+  const apx=px-ax,apy=py-ay,apz=pz-az;
+  const d1=abx*apx+aby*apy+abz*apz, d2=acx*apx+acy*apy+acz*apz;
+  if(d1<=0&&d2<=0){ out[0]=ax;out[1]=ay;out[2]=az; return; }
+  const bpx=px-pos[3*b],bpy=py-pos[3*b+1],bpz=pz-pos[3*b+2];
+  const d3=abx*bpx+aby*bpy+abz*bpz, d4=acx*bpx+acy*bpy+acz*bpz;
+  if(d3>=0&&d4<=d3){ out[0]=pos[3*b];out[1]=pos[3*b+1];out[2]=pos[3*b+2]; return; }
+  const vc=d1*d4-d3*d2;
+  if(vc<=0&&d1>=0&&d3<=0){ const v=d1/(d1-d3); out[0]=ax+v*abx;out[1]=ay+v*aby;out[2]=az+v*abz; return; }
+  const cpx=px-pos[3*c],cpy=py-pos[3*c+1],cpz=pz-pos[3*c+2];
+  const d5=abx*cpx+aby*cpy+abz*cpz, d6=acx*cpx+acy*cpy+acz*cpz;
+  if(d6>=0&&d5<=d6){ out[0]=pos[3*c];out[1]=pos[3*c+1];out[2]=pos[3*c+2]; return; }
+  const vb=d5*d2-d1*d6;
+  if(vb<=0&&d2>=0&&d6<=0){ const w=d2/(d2-d6); out[0]=ax+w*acx;out[1]=ay+w*acy;out[2]=az+w*acz; return; }
+  const va=d3*d6-d5*d4;
+  if(va<=0&&(d4-d3)>=0&&(d5-d6)>=0){ const w=(d4-d3)/((d4-d3)+(d5-d6)); out[0]=pos[3*b]+w*(pos[3*c]-pos[3*b]);out[1]=pos[3*b+1]+w*(pos[3*c+1]-pos[3*b+1]);out[2]=pos[3*b+2]+w*(pos[3*c+2]-pos[3*b+2]); return; }
+  const den=1/(va+vb+vc), v=vb*den, w=vc*den;
+  out[0]=ax+abx*v+acx*w; out[1]=ay+aby*v+acy*w; out[2]=az+abz*v+acz*w;
+}
+const _cp=[0,0,0];
+/* closest point on the pre mesh near (x,y,z): nearest indexed vertex, then its incident triangles */
+function closestOnPre(grid,pre,x,y,z,maxDist){
+  const v=grid.nearest(x,y,z,maxDist); if(v<0) return null;
+  const {pos,tris,vfStart,vf,fn}=pre; let bd=Infinity, bf=-1, bx=0,by=0,bz=0;
+  for(let i=vfStart[v];i<vfStart[v+1];i++){ const f=vf[i]; closestPtTri(x,y,z,tris[3*f],tris[3*f+1],tris[3*f+2],pos,_cp);
+    const dx=_cp[0]-x,dy=_cp[1]-y,dz=_cp[2]-z; const d2=dx*dx+dy*dy+dz*dz; if(d2<bd){bd=d2;bf=f;bx=_cp[0];by=_cp[1];bz=_cp[2];} }
+  if(bf<0){ bx=pos[3*v];by=pos[3*v+1];bz=pos[3*v+2]; bd=(bx-x)**2+(by-y)**2+(bz-z)**2; }
+  const nx=bf>=0?fn[3*bf]:pre.vn[3*v], ny=bf>=0?fn[3*bf+1]:pre.vn[3*v+1], nz=bf>=0?fn[3*bf+2]:pre.vn[3*v+2];
+  return {x:bx,y:by,z:bz,d:Math.sqrt(bd),nx,ny,nz,s:(x-bx)*nx+(y-by)*ny+(z-bz)*nz};
+}
+const I3=[1,0,0,0,1,0,0,0,1];
+function rotVec(w){ const th=Math.hypot(w[0],w[1],w[2]); if(th<1e-12) return I3.slice(); const kx=w[0]/th,ky=w[1]/th,kz=w[2]/th,c=Math.cos(th),s=Math.sin(th),C=1-c;
+  return [c+kx*kx*C,kx*ky*C-kz*s,kx*kz*C+ky*s, ky*kx*C+kz*s,c+ky*ky*C,ky*kz*C-kx*s, kz*kx*C-ky*s,kz*ky*C+kx*s,c+kz*kz*C]; }
+function mul3(A,B){ const C=new Array(9); for(let i=0;i<3;i++) for(let j=0;j<3;j++) C[3*i+j]=A[3*i]*B[j]+A[3*i+1]*B[3+j]+A[3*i+2]*B[6+j]; return C; }
+function mulv(R,x,y,z){ return [R[0]*x+R[1]*y+R[2]*z, R[3]*x+R[4]*y+R[5]*z, R[6]*x+R[7]*y+R[8]*z]; }
+function mulvT(R,x,y,z){ return [R[0]*x+R[3]*y+R[6]*z, R[1]*x+R[4]*y+R[7]*z, R[2]*x+R[5]*y+R[8]*z]; }
+function solve6(A,b){ const n=6; const M=A.map((r,i)=>[...r,b[i]]);
+  for(let c=0;c<n;c++){ let p=c; for(let r=c+1;r<n;r++) if(Math.abs(M[r][c])>Math.abs(M[p][c])) p=r; [M[c],M[p]]=[M[p],M[c]]; if(Math.abs(M[c][c])<1e-14) return null;
+    for(let r=0;r<n;r++){ if(r===c) continue; const f=M[r][c]/M[c][c]; for(let k=c;k<=n;k++) M[r][k]-=f*M[c][k]; } }
+  return M.map((r,i)=>r[n]/r[i]); }
+/* one trimmed point-to-plane ICP step; src = post points (xyz), R,t map post -> pre */
+function icpStep(src,R,t,grid,pre,maxDist,trim,wts){
+  const n=src.length/3; const corr=[];
+  for(let i=0;i<n;i++){ const p=mulv(R,src[3*i],src[3*i+1],src[3*i+2]); const px=p[0]+t[0],py=p[1]+t[1],pz=p[2]+t[2];
+    const c=closestOnPre(grid,pre,px,py,pz,maxDist); if(!c) continue; corr.push([c.d,px,py,pz,c.nx,c.ny,c.nz,c.s,wts?wts[i]:1]); }
+  if(corr.length<12) return null;
+  corr.sort((a,b)=>a[0]-b[0]); const keep=Math.max(12,Math.floor(corr.length*trim));
+  const A=Array.from({length:6},()=>new Array(6).fill(0)), b=new Array(6).fill(0); let ss=0;
+  for(let i=0;i<keep;i++){ const [d,px,py,pz,nx,ny,nz,r,w]=corr[i];
+    const J=[py*nz-pz*ny, pz*nx-px*nz, px*ny-py*nx, nx,ny,nz];
+    for(let a=0;a<6;a++){ b[a]-=w*J[a]*r; for(let c=0;c<6;c++) A[a][c]+=w*J[a]*J[c]; } ss+=r*r; }
+  const x=solve6(A,b); if(!x) return null;
+  const Rw=rotVec([x[0],x[1],x[2]]); const Rn=mul3(Rw,R); const tt=mulv(Rw,t[0],t[1],t[2]);
+  return {R:Rn,t:[tt[0]+x[3],tt[1]+x[4],tt[2]+x[5]],rms:Math.sqrt(ss/keep),n:keep};
+}
+function pca(pos,idx){
+  let cx=0,cy=0,cz=0; for(const v of idx){cx+=pos[3*v];cy+=pos[3*v+1];cz+=pos[3*v+2];} cx/=idx.length;cy/=idx.length;cz/=idx.length;
+  const C=[0,0,0,0,0,0,0,0,0];
+  for(const v of idx){ const x=pos[3*v]-cx,y=pos[3*v+1]-cy,z=pos[3*v+2]-cz; C[0]+=x*x;C[1]+=x*y;C[2]+=x*z;C[4]+=y*y;C[5]+=y*z;C[8]+=z*z; }
+  C[3]=C[1];C[6]=C[2];C[7]=C[5];
+  // Jacobi eigen decomposition
+  const A=C.slice(), V=I3.slice();
+  for(let sweep=0;sweep<60;sweep++){ let off=Math.abs(A[1])+Math.abs(A[2])+Math.abs(A[5]); if(off<1e-12) break;
+    for(const [p,q] of [[0,1],[0,2],[1,2]]){ const apq=A[3*p+q]; if(Math.abs(apq)<1e-15) continue; const th=0.5*Math.atan2(2*apq,A[3*q+q]-A[3*p+p]); const c=Math.cos(th),s=Math.sin(th);
+      const Rr=I3.slice(); Rr[3*p+p]=c;Rr[3*q+q]=c;Rr[3*p+q]=s;Rr[3*q+p]=-s;
+      const AR=mul3(A,Rr); const RtAR=mul3([Rr[0],Rr[3],Rr[6],Rr[1],Rr[4],Rr[7],Rr[2],Rr[5],Rr[8]],AR); for(let i=0;i<9;i++) A[i]=RtAR[i];
+      const VR=mul3(V,Rr); for(let i=0;i<9;i++) V[i]=VR[i]; } }
+  const ev=[[A[0],0],[A[4],1],[A[8],2]].sort((a,b)=>b[0]-a[0]);
+  const col=k=>[V[k],V[3+k],V[6+k]];
+  return {c:[cx,cy,cz],e0:col(ev[0][1]),e1:col(ev[1][1])};
+}
+const cross=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];
+function gather(pos,idx){ const o=new Float64Array(idx.length*3); for(let i=0;i<idx.length;i++){o[3*i]=pos[3*idx[i]];o[3*i+1]=pos[3*idx[i]+1];o[3*i+2]=pos[3*idx[i]+2];} return o; }
+
+async function globalAlign(post,pre){
+  const sP=sampleIdx(post.nv,4000), sQ=sampleIdx(pre.nv,4000);
+  const pp=pca(post.pos,sP), pq=pca(pre.pos,sQ);
+  const grid=makeGrid(pre.pos,sampleIdx(pre.nv,60000),2.0);
+  const src=gather(post.pos,sP);
+  const f0=pq.e0,f1=pq.e1,f2=cross(f0,f1);
+  let best=null;
+  for(const [s0,s1] of [[1,1],[1,-1],[-1,1],[-1,-1]]){
+    const e0=pp.e0.map(x=>x*s0), e1=pp.e1.map(x=>x*s1), e2=cross(e0,e1);
+    const R=new Array(9).fill(0); const E=[e0,e1,e2],F=[f0,f1,f2];
+    for(let k=0;k<3;k++) for(let i=0;i<3;i++) for(let j=0;j<3;j++) R[3*i+j]+=F[k][i]*E[k][j];
+    const rc=mulv(R,pp.c[0],pp.c[1],pp.c[2]); let cur={R,t:[pq.c[0]-rc[0],pq.c[1]-rc[1],pq.c[2]-rc[2]],rms:Infinity};
+    for(let k=0;k<16;k++){ const md=k<6?6:(k<11?3:2); const r=icpStep(src,cur.R,cur.t,grid,pre,md,0.7); if(!r) break; cur=r; }
+    if(!best||cur.rms<best.rms) best=cur;
+    await tick();
+  }
+  for(let k=0;k<20;k++){ const r=icpStep(src,best.R,best.t,grid,pre,k<10?1.5:1.0,0.7); if(!r) break; best=r; }
+  return best;
+}
+
+async function matchPre(){
+  const m=state.mesh, pre=state.pre; if(!m||!pre) return;
+  const cands=state.cands||[]; if(!cands.length){ status('No bracket candidates to fit to the pre scan.',null,true); return; }
+  const Rt=+$('p-radius').value, thr=+$('p-diff').value, band=+$('p-band').value;
+  status('Aligning arches',0.05); await tick();
+  const G=await globalAlign(m,pre); state.global=G; showGhost(state.showPre); $('v-pre').disabled=false;
+  $('s-gfit').textContent=G.rms.toFixed(2)+' mm RMS';
+  if(G.rms>1.2) status('Arch fit is loose ('+G.rms.toFixed(2)+' mm). Check both files are the same arch; continuing with tooth fits.',0.2,true);
+  const {nv,pos,adjStart,adj}=m; const flag=new Uint8Array(nv); for(const c of cands) for(const v of c.verts) flag[v]=1;
+  const parts=cands;
+  const diff=new Float32Array(nv).fill(NaN); const rmsList=[];
+  for(let pi=0;pi<parts.length;pi++){
+    const part=parts[pi];
+    part.ok=false; part.extra=null;
+    const weakOnly=part.reasons.every(r=>r==='barely raised'||r==='no flat top');
+    if(!(part.accepted||part.userSet||(weakOnly&&part.meanOff>0.15&&part.diam>=+$('p-min').value))) continue; // only plausible brackets are worth a fit
+    status(`Fitting tooth ${pi+1} of ${parts.length} to the pre scan`,0.2+0.6*pi/parts.length); await tick();
+    const seed=new Uint8Array(nv); for(const v of part.verts) seed[v]=1;
+    const reach=new Uint8Array(nv); const rdist=new Float32Array(nv).fill(Infinity); growDistance(m,seed,()=>true,Rt,reach,rdist);
+    const region=[]; for(let v=0;v<nv;v++) if(reach[v]&&!flag[v]) region.push(v);
+    if(region.length<60){ part.ok=false; continue; }
+    // local pre index around the region in the pre frame
+    let mn=[Infinity,Infinity,Infinity],mx=[-Infinity,-Infinity,-Infinity];
+    for(let v=0;v<nv;v++){ if(!reach[v]) continue; const p=mulv(G.R,pos[3*v],pos[3*v+1],pos[3*v+2]); for(let k=0;k<3;k++){ const x=p[k]+G.t[k]; if(x<mn[k])mn[k]=x; if(x>mx[k])mx[k]=x; } }
+    const pad=3.5; const idx=[]; const pp=pre.pos;
+    for(let v=0;v<pre.nv;v++){ if(pp[3*v]>=mn[0]-pad&&pp[3*v]<=mx[0]+pad&&pp[3*v+1]>=mn[1]-pad&&pp[3*v+1]<=mx[1]+pad&&pp[3*v+2]>=mn[2]-pad&&pp[3*v+2]<=mx[2]+pad) idx.push(v); }
+    if(idx.length<100){ part.ok=false; continue; }
+    const grid=makeGrid(pp,idx,0.8);
+    const sel=sampleIdx(region.length,2500).map(i=>region[i]); const src=gather(pos,sel);
+    const sig=Rt*0.5; const wts=Float64Array.from(sel,v=>Math.exp(-(rdist[v]*rdist[v])/(2*sig*sig))); // enamel nearest the bracket counts most
+    const coarseN=Math.min(700,sel.length); const srcC=src.subarray(0,3*coarseN), wtsC=wts.subarray(0,coarseN);
+    // the annulus right around the bracket is what the fill will sit on: score candidate fits by how well it lands on the pre surface
+    const ann=[]; for(const v of region) if(rdist[v]<=1.5) ann.push(v); const annSrc=gather(pos,ann);
+    const score=(R,t)=>{ const d=[]; for(let i=0;i<ann.length;i++){ const p=mulv(R,annSrc[3*i],annSrc[3*i+1],annSrc[3*i+2]); const c=closestOnPre(grid,pre,p[0]+t[0],p[1]+t[1],p[2]+t[2],1.5); d.push(c?Math.abs(c.s):1.5); } d.sort((a,b)=>a-b); return d.length?d[Math.floor(d.length*0.85)]:Infinity; };
+    // several starts around the arch alignment (the tooth may have moved a few tenths of a mm), each run coarsely; the best two are refined
+    const rp=pca(pos,region); const e0=rp.e0,e1=rp.e1,en=cross(e0,e1);
+    const starts=[[0,0,0,0]]; for(const d of [0.7,-0.7]){ starts.push([d*e0[0],d*e0[1],d*e0[2],0]); starts.push([d*e1[0],d*e1[1],d*e1[2],0]); } for(const a of [0.1,-0.1]) starts.push([0,0,0,a]);
+    const cands=[];
+    for(const st of starts){
+      const Rw=rotVec([en[0]*st[3],en[1]*st[3],en[2]*st[3]]); // rotate about the surface normal through the region centre
+      const cc=mulv(G.R,rp.c[0],rp.c[1],rp.c[2]); const c0=[cc[0]+G.t[0],cc[1]+G.t[1],cc[2]+G.t[2]]; const rc=mulv(Rw,c0[0],c0[1],c0[2]);
+      let cur={R:mul3(Rw,G.R),t:[0,1,2].map(k=>{ const tt=mulv(Rw,G.t[0],G.t[1],G.t[2]); return tt[k]+c0[k]-rc[k]+st[k]; }),rms:Infinity};
+      for(let k=0;k<14;k++){ const r=icpStep(srcC,cur.R,cur.t,grid,pre,k<6?1.6:0.8,0.7,wtsC); if(!r) break; cur=r; }
+      cands.push({cur,sc:score(cur.R,cur.t)});
+    }
+    cands.sort((a,b)=>a.sc-b.sc);
+    let best=null;
+    for(const cand of cands.slice(0,2)){
+      let cur=cand.cur;
+      for(let k=0;k<30;k++){ const r=icpStep(src,cur.R,cur.t,grid,pre,k<10?0.8:0.5,0.7,wts); if(!r) break; const conv=Math.abs(cur.rms-r.rms)<1e-4&&k>12; cur=r; if(conv) break; }
+      const sc=score(cur.R,cur.t); if(!best||sc<best.sc) best={cur,sc};
+    }
+    const cur=best.cur; part.score=best.sc;
+    part.ok=true; part.R=cur.R; part.t=cur.t; part.rms=cur.rms; part.grid=grid; rmsList.push(part.score);
+    // signed height of every point in reach above the fitted pre anatomy
+    for(let v=0;v<nv;v++){ if(!reach[v]) continue; const p=mulv(cur.R,pos[3*v],pos[3*v+1],pos[3*v+2]); const c=closestOnPre(grid,pre,p[0]+cur.t[0],p[1]+cur.t[1],p[2]+cur.t[2],3.0); if(c) diff[v]=c.s; }
+  }
+  // verify every candidate against the pre scan: a bracket stands well above the fitted anatomy, a cusp or papilla does not
+  const vn=m.vn; let verified=0;
+  for(let pi=0;pi<parts.length;pi++){
+    const part=parts[pi]; if(!part.ok) continue;
+    let s=0,n=0; for(const v of part.verts){ const d=diff[v]; if(!isNaN(d)){ s+=Math.max(0,d); n++; } }
+    part.preHeight=n?s/n:NaN; if(!n) continue;
+    if(part.score>0.6) continue; // the tooth fit failed (new tooth, missing tooth): the geometry decides alone
+    if(part.preHeight>0.4){ part.reasons=part.reasons.filter(r=>r!=='no flat top'&&r!=='barely raised'); if(!part.userSet) part.accepted=part.reasons.length===0; }
+    else if(part.preHeight<0.15){ if(!part.userSet) part.accepted=false; if(!part.reasons.includes('matches the pre-ortho anatomy')) part.reasons.push('matches the pre-ortho anatomy'); }
+    if(!part.userSet&&part.accepted) verified++;
+    // from an accepted part, grow through points that rise above the fitted pre surface, within a band and on surfaces facing the same way
+    if(part.accepted){ const [nx,ny,nz]=part.normal; const core=new Uint8Array(nv); for(const v of part.verts) core[v]=1; const mg=+$('p-margin').value; const seed=footprintRing(m,part,Math.min(mg,1.0)); for(const v of part.verts) seed[v]=1; const tmp=new Uint8Array(nv);
+      // keep growing while the surface stands above the pre anatomy, over flat-ish surface facing the bracket's way
+      // (bracket base, cement); steep surface is an embrasure wall or a neighbouring tooth and stops the growth
+      const refN=state.features.refN, steep=state.features.steep;
+      growDistance(m,seed,u=>diff[u]>thr&&steep[u]>0.4&&(refN[3*u]*nx+refN[3*u+1]*ny+refN[3*u+2]*nz)>0.3,band,tmp);
+      const extra=[]; for(let v=0;v<nv;v++) if(tmp[v]&&!core[v]) extra.push(v); part.extra=extra; }
+  }
+  state.diff=diff; applySelection();
+  const fitted=parts.filter(p=>p.ok).length;
+  rmsList.sort((a,b)=>a-b); const med=rmsList.length?rmsList[Math.floor(rmsList.length/2)]:NaN;
+  $('s-parts').textContent=`${fitted} of ${parts.length}`; $('s-rms').textContent=isNaN(med)?'–':med.toFixed(2)+' mm rim gap (median, 85th pct)';
+  status(fitted?`${fitted} of ${parts.length} candidates fitted to the pre scan (rim gap ${med.toFixed(2)} mm); ${verified} confirmed as brackets by height above the pre-ortho anatomy.`:'No tooth could be fitted. Check that the pre scan is the same arch, or widen the fit radius.',null,!fitted);
+}
+
+/* --------------------------------------------------------------- three.js */
+const state={mesh:null,original:null,history:[],features:null,flag:null,isPatch:null,comps:0,mode:'orbit',flat:false,fileName:'synthetic sample',pre:null,preName:'none',global:null,parts:null,partId:null,diff:null,showPre:false,cands:[],candOf:null,manualAdd:null,manualErase:null};
+let renderer,scene,camera,controls,meshObj=null,geom=null,material;
+const COL={base:[0.80,0.76,0.68],flag:[0.84,0.27,0.17],cand:[0.90,0.66,0.22],patch:[0.22,0.58,0.40]};
+function initThree(){
+  const cv=$('gl');
+  renderer=new THREE.WebGLRenderer({canvas:cv,antialias:true});
+  renderer.setPixelRatio(Math.min(devicePixelRatio||1,2));
+  scene=new THREE.Scene();
+  camera=new THREE.PerspectiveCamera(32,1,0.5,4000); camera.up.set(0,0,1); camera.position.set(0,-120,40);
+  controls=new THREE.OrbitControls(camera,cv); controls.enableDamping=true; controls.dampingFactor=0.12; controls.rotateSpeed=0.8;
+  scene.add(new THREE.HemisphereLight(0xffffff,0x6e7a80,0.55));
+  const dl=new THREE.DirectionalLight(0xffffff,0.75); dl.position.set(30,40,80); camera.add(dl);
+  const dl2=new THREE.DirectionalLight(0xffffff,0.25); dl2.position.set(-60,-20,-30); camera.add(dl2);
+  scene.add(camera);
+  material=new THREE.MeshStandardMaterial({vertexColors:true,roughness:0.6,metalness:0.02,side:THREE.DoubleSide});
+  applyTheme();
+  const ro=new ResizeObserver(resize); ro.observe(cv.parentElement); resize();
+  (function loop(){ requestAnimationFrame(loop); controls.update(); renderer.render(scene,camera); })();
+}
+function resize(){ const el=$('gl').parentElement; const w=el.clientWidth,h=el.clientHeight; if(!w||!h) return; renderer.setSize(w,h,false); camera.aspect=w/h; camera.updateProjectionMatrix(); }
+function applyTheme(){ const c=getComputedStyle(document.documentElement).getPropertyValue('--vp').trim(); try{ renderer.setClearColor(new THREE.Color(c)); }catch(e){} }
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change',applyTheme);
+new MutationObserver(applyTheme).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
+
+function showMesh(fit){
+  const m=state.mesh;
+  if(meshObj){ scene.remove(meshObj); geom.dispose(); }
+  geom=new THREE.BufferGeometry();
+  geom.setAttribute('position',new THREE.BufferAttribute(m.pos,3));
+  geom.setIndex(new THREE.BufferAttribute(m.tris,1));
+  geom.setAttribute('normal',new THREE.BufferAttribute(m.vn,3));
+  geom.setAttribute('color',new THREE.BufferAttribute(new Float32Array(m.nv*3),3));
+  meshObj=new THREE.Mesh(geom,material); scene.add(meshObj);
+  material.flatShading=state.flat; material.needsUpdate=true;
+  updateColors();
+  $('s-tris').textContent=m.nt.toLocaleString(); $('s-edge').textContent=m.edgeLen.toFixed(3)+' mm'; $('s-file').textContent=state.fileName;
+  if(fit) fitView();
+}
+let preObj=null, preGeom=null, preMat=null;
+function showGhost(on){
+  state.showPre=on; $('v-pre').classList.toggle('on',on);
+  if(preObj){ scene.remove(preObj); preGeom.dispose(); preObj=null; }
+  if(!on||!state.pre||!state.global) return;
+  const pre=state.pre, G=state.global;
+  preGeom=new THREE.BufferGeometry(); preGeom.setAttribute('position',new THREE.BufferAttribute(pre.pos,3)); preGeom.setIndex(new THREE.BufferAttribute(pre.tris,1)); preGeom.setAttribute('normal',new THREE.BufferAttribute(pre.vn,3));
+  if(!preMat) preMat=new THREE.MeshStandardMaterial({color:0x4a7fd4,transparent:true,opacity:0.42,depthWrite:false,roughness:0.7,side:THREE.DoubleSide});
+  preObj=new THREE.Mesh(preGeom,preMat); preObj.matrixAutoUpdate=false;
+  const R=G.R, tt=mulvT(R,G.t[0],G.t[1],G.t[2]); // pre -> post: p = Rᵀ(q - t)
+  preObj.matrix.set(R[0],R[3],R[6],-tt[0], R[1],R[4],R[7],-tt[1], R[2],R[5],R[8],-tt[2], 0,0,0,1);
+  scene.add(preObj);
+}
+function updateColors(){
+  if(!geom) return; const m=state.mesh; const c=geom.getAttribute('color').array; const flag=state.flag, ip=state.isPatch;
+  const co=state.candOf;
+  for(let v=0;v<m.nv;v++){ const k=flag&&flag[v]?COL.flag:(co&&co[v]>=0?COL.cand:(ip&&ip[v]?COL.patch:COL.base)); c[3*v]=k[0];c[3*v+1]=k[1];c[3*v+2]=k[2]; }
+  geom.getAttribute('color').needsUpdate=true;
+}
+function fitView(){
+  geom.computeBoundingSphere(); const bs=geom.boundingSphere; if(!bs) return;
+  controls.target.copy(bs.center);
+  const dist=bs.radius/Math.sin(camera.fov*Math.PI/360)*1.15;
+  camera.position.copy(bs.center).add(new THREE.Vector3(0,-dist,dist*0.35)); camera.near=dist*0.01; camera.far=dist*20; camera.updateProjectionMatrix(); controls.update();
+}
+
+/* ------------------------------------------------------------------ brush */
+const ray=new THREE.Raycaster(); let downAt=null;
+$('gl').addEventListener('pointerdown',e=>{ downAt=[e.clientX,e.clientY]; });
+$('gl').addEventListener('pointerup',e=>{
+  if(!downAt||busy||!meshObj) { downAt=null; return; }
+  const moved=Math.hypot(e.clientX-downAt[0],e.clientY-downAt[1]); downAt=null; if(moved>5) return;
+  const r=$('gl').getBoundingClientRect(); const nd=new THREE.Vector2((e.clientX-r.left)/r.width*2-1,-((e.clientY-r.top)/r.height*2-1));
+  ray.setFromCamera(nd,camera); const hits=ray.intersectObject(meshObj); if(!hits.length) return;
+  const h=hits[0]; const m=state.mesh; const vs=[h.face.a,h.face.b,h.face.c]; let best=vs[0],bd=Infinity;
+  for(const v of vs){ const d=Math.hypot(m.pos[3*v]-h.point.x,m.pos[3*v+1]-h.point.y,m.pos[3*v+2]-h.point.z); if(d<bd){bd=d;best=v;} }
+  if(state.mode==='orbit'){
+    if(!state.candOf) return; let ci=state.candOf[best];
+    if(ci<0){ const seed=new Uint8Array(m.nv); seed[best]=1; const near=new Uint8Array(m.nv); growDistance(m,seed,()=>true,0.8,near); for(let v=0;v<m.nv&&ci<0;v++) if(near[v]&&state.candOf[v]>=0) ci=state.candOf[v]; }
+    if(ci>=0) toggleCandidate(ci); else if(!grabAt(best)) status('Nothing bracket-like at that point. Use the brush under Paint by hand for a free-form area.');
+    return;
+  }
+  paint(best,+$('p-brush').value,state.mode==='add');
+});
+function paint(v0,radius,add){
+  const m=state.mesh; if(!state.manualAdd){ state.manualAdd=new Uint8Array(m.nv); state.manualErase=new Uint8Array(m.nv); }
+  const seed=new Uint8Array(m.nv); seed[v0]=1; const region=new Uint8Array(m.nv);
+  growDistance(m,seed,()=>true,radius,region);
+  for(let v=0;v<m.nv;v++) if(region[v]){ if(add){state.manualAdd[v]=1;state.manualErase[v]=0;} else {state.manualErase[v]=1;state.manualAdd[v]=0;} }
+  applySelection();
+}
+function setMode(mode){ state.mode=mode; for(const k of ['orbit','add','erase']) $('m-'+k).classList.toggle('on',k===mode); controls.enableRotate=true; $('gl').style.cursor=mode==='orbit'?'pointer':'crosshair'; }
+$('btn-clearpaint').onclick=()=>{ state.manualAdd=null; state.manualErase=null; applySelection(); status('Painting cleared.'); };
+$('m-orbit').onclick=()=>setMode('orbit'); $('m-add').onclick=()=>setMode('add'); $('m-erase').onclick=()=>setMode('erase');
+$('sel-auto').addEventListener('change',()=>{ if(state.cands) applySelection(); });
+for(const id of ['p-margin','p-crease']) $(id).addEventListener('input',()=>{ if(state.cands&&!busy) applySelection(); }); $('sel-manual').addEventListener('change',()=>{ if(state.cands) applySelection(); });
+
+/* --------------------------------------------------------------- pipeline */
+async function analyze(){
+  const m=state.mesh;
+  status('Measuring edge angles',0.03); await tick();
+  const {maxDih,isB}=computeDihedral(m);
+  status('Building the reference tooth surface',0.1); await tick();
+  const {offset,offsetC,steep,thin,refN,free}=await computeReference(m,p=>status('Building the reference tooth surface',0.1+0.85*p));
+  const bnear=new Uint8Array(m.nv); growDistance(m,isB,()=>true,1.5,bnear);
+  state.features={maxDih,isB,offset,offsetC,steep,thin,bnear,refN,free,frame:archFrame(m)};
+  status('Analysis ready');
+}
+async function loadMesh(pos,tris,name){
+  setBusy(true);
+  state.fileName=name; state.history=[]; state.isPatch=null; state.features=null; state.comps=0;
+  status('Building mesh',0.02); await tick();
+  state.mesh=buildMesh(pos,tris); state.original=state.mesh; state.flag=new Uint8Array(state.mesh.nv);
+  { let mn=[Infinity,Infinity,Infinity],mx=[-Infinity,-Infinity,-Infinity]; for(let v=0;v<state.mesh.nv;v++) for(let k=0;k<3;k++){ const x=pos[3*v+k]; if(x<mn[k])mn[k]=x; if(x>mx[k])mx[k]=x; } const diag=Math.hypot(mx[0]-mn[0],mx[1]-mn[1],mx[2]-mn[2]); if(diag>250||diag<15) status(`This scan spans ${diag.toFixed(0)} units across; the pipeline assumes millimetres, so results may be off if it was exported in other units.`,null,true); }
+  $('s-holes').textContent='–'; $('s-patch').textContent='–';
+  showMesh(true);
+  setBusy(false);
+}
+
+/* Detection pass: find candidates, verify against the pre scan when there is one, then wait for the click (or go on if asked). */
+async function runAuto(){
+  if(!state.mesh||busy) return; setBusy(true);
+  try{
+    if(!state.features) await analyze();
+    await detect();
+    const n=(state.cands||[]).length;
+    if(!n){ status('No bracket-like parts found. Paint them with the brush under Step 2, or lower the thresholds under Advanced and Detect again.',null,true); setBusy(false); return; }
+    if(state.pre) await matchPre();
+    const sel=state.cands.filter(c=>c.on).length;
+    if($('p-autoremove').checked&&sel){ await removeAndFill(); await secondPass(); }
+    else status(sel?`${sel} bracket${sel===1?'':'s'} selected (red); amber parts were seen but rejected. Click any part to include or exclude it, then press Remove.`:`${n} candidate${n===1?'':'s'} found but none passed as a bracket. Click an amber part to include it, or switch Step 2 to manual.`,null,!sel);
+  }catch(e){ console.error(e); status('Processing failed: '+e.message,null,true); }
+  setBusy(false);
+}
+$('file').addEventListener('change',async e=>{
+  const f=e.target.files[0]; if(!f) return; e.target.value='';
+  setBusy(true); status('Reading '+f.name,0.01); await tick();
+  try{ const buf=await f.arrayBuffer(); const raw=parseSTL(buf); if(raw.length<9) throw new Error('no triangles found'); status('Welding vertices',0.02); await tick(); const w=weld(raw); await loadMesh(w.pos,w.tris,f.name); await runAuto(); }
+  catch(err){ console.error(err); status('Could not read that STL: '+err.message,null,true); setBusy(false); }
+});
+async function loadPre(pos,tris,name){
+  setBusy(true); status('Building pre-ortho mesh',0.5); await tick();
+  state.pre=buildMesh(pos,tris); state.preName=name; state.global=null; state.parts=null; state.partId=null; showGhost(false); $('v-pre').disabled=true;
+  $('s-pre').textContent=`${name} · ${state.pre.nt.toLocaleString()} tris`; $('s-gfit').textContent='–'; $('s-parts').textContent='–'; $('s-rms').textContent='–';
+  setBusy(false); status(state.mesh?'Pre scan loaded.':'Pre scan loaded. Now load the post-ortho scan.');
+}
+$('file-pre').addEventListener('change',async e=>{
+  const f=e.target.files[0]; if(!f) return; e.target.value='';
+  setBusy(true); status('Reading '+f.name,0.01); await tick();
+  try{ const buf=await f.arrayBuffer(); const raw=parseSTL(buf); if(raw.length<9) throw new Error('no triangles found'); const w=weld(raw); await loadPre(w.pos,w.tris,f.name); if(state.mesh){ if(state.history.length) $('btn-reset').click(); else await runAuto(); } }
+  catch(err){ console.error(err); status('Could not read that STL: '+err.message,null,true); setBusy(false); }
+});
+$('btn-sample').onclick=async()=>{ const s=makeSample(); const q=makeSample(true); await loadMesh(s.pos,s.tris,'synthetic sample'); await loadPre(q.pos,q.tris,'synthetic pre-ortho'); await runAuto(); };
+$('btn-auto').onclick=()=>runAuto();
+$('btn-match').onclick=async()=>{ if(busy) return; setBusy(true); try{ await matchPre(); }catch(e){ console.error(e); status('Matching failed: '+e.message,null,true);} setBusy(false); };
+$('btn-detect').onclick=async()=>{ if(!state.mesh) return; setBusy(true); try{ if(!state.features) await analyze(); await detect(); }catch(e){ console.error(e); status('Detection failed: '+e.message,null,true);} setBusy(false); };
+$('btn-clear').onclick=()=>{ if(!state.mesh) return; state.cands=[]; state.candOf=null; state.manualAdd=null; state.manualErase=null; applySelection(); status('Selection cleared.'); };
+/* After a removal: look once more at the result for small raised leftovers beside the rebuilt areas (hook bases, wing tips, cement blobs). */
+async function secondPass(){
+  if(!state.mesh||!state.isPatch) return;
+  const prev=$('msg').textContent;
+  state.secondLook=true; try{ await analyze(); await detect(); } finally { state.secondLook=false; }
+  const left=state.cands.filter(c=>c.leftover&&c.on).length; const other=state.cands.filter(c=>c.on).length-left;
+  if(left||other){ if($('p-autoremove').checked){ await removeAndFill(); status(`Second pass: ${left+other} leftover${left+other===1?'':'s'} removed. Export when ready.`); }
+    else status(`Done. A second look found ${left+other} small leftover${left+other===1?'':'s'} beside the rebuilt areas (red): press Remove to take them, click any you disagree with, or Export as is.`); }
+  else { state.cands=[]; state.candOf=null; applySelection(); status(prev.replace(/ Export, or Run again.*$/,'')+' A second look found nothing left. Export when ready.'); }
+}
+$('btn-remove').onclick=async()=>{ if(!state.mesh||!state.flag||busy) return; setBusy(true); try{ const wasLeftover=state.cands&&state.cands.some(c=>c.leftover); await removeAndFill(); if(!wasLeftover) await secondPass(); }catch(e){ console.error(e); status('Removal failed: '+e.message,null,true);} setBusy(false); };
+$('btn-undo').onclick=()=>{ const h=state.history.pop(); if(!h) return; state.mesh=h.mesh; state.isPatch=h.isPatch; state.features=h.features; state.cands=h.cands||[]; state.candOf=h.candOf||null; state.manualAdd=null; state.manualErase=null; state.parts=null; showMesh(false); applySelection(); $('btn-undo').disabled=!state.history.length; status('Undone: the selection is back. Click parts to adjust, then Remove.'); };
+$('btn-reset').onclick=()=>{ if(!state.original) return; state.mesh=state.original; state.history=[]; state.isPatch=null; state.features=null; state.cands=[]; state.candOf=null; state.manualAdd=null; state.manualErase=null; state.parts=null; state.flag=new Uint8Array(state.mesh.nv); showMesh(false); applySelection(); $('btn-undo').disabled=true; $('s-holes').textContent='–'; $('s-patch').textContent='–'; $('s-comps').textContent='–'; $('s-flag').textContent='0'; status('Back to the original scan.'); runAuto(); };
+$('v-fit').onclick=()=>fitView();
+$('v-pre').onclick=()=>showGhost(!state.showPre);
+$('v-flat').onclick=()=>{ state.flat=!state.flat; material.flatShading=state.flat; material.needsUpdate=true; $('v-flat').classList.toggle('on',state.flat); };
+for(const [id,out,fmt] of [['p-angle','o-angle',v=>v+'°'],['p-steep','o-steep',v=>v+'°'],['p-seed','o-seed',v=>(+v).toFixed(2)],['p-prot','o-prot',v=>(+v).toFixed(2)+' mm'],['p-margin','o-margin',v=>(+v).toFixed(2)+' mm'],['p-crease','o-crease',v=>(+v).toFixed(2)+' mm'],['p-min','o-min',v=>(+v).toFixed(1)+' mm'],['p-max','o-max',v=>(+v).toFixed(1)+' mm'],['p-brush','o-brush',v=>(+v).toFixed(1)+' mm'],['p-fill','o-fill',v=>(+v).toFixed(2)],['p-radius','o-radius',v=>(+v).toFixed(2)+' mm'],['p-diff','o-diff',v=>(+v).toFixed(2)+' mm'],['p-band','o-band',v=>(+v).toFixed(2)+' mm']]){
+  $(id).addEventListener('input',()=>{ $(out).textContent=fmt($(id).value); });
+}
+
+/* ------------------------------------------------------------------ export */
+function toSTL(m){
+  const {nv,nt,pos,tris,fn}=m; const buf=new ArrayBuffer(84+nt*50); const dv=new DataView(buf); const u8=new Uint8Array(buf);
+  const hdr='Virtual Debond - brackets removed'; for(let i=0;i<hdr.length&&i<80;i++) u8[i]=hdr.charCodeAt(i);
+  dv.setUint32(80,nt,true); let o=84;
+  for(let f=0;f<nt;f++){ dv.setFloat32(o,fn[3*f],true);dv.setFloat32(o+4,fn[3*f+1],true);dv.setFloat32(o+8,fn[3*f+2],true); o+=12;
+    for(let e=0;e<3;e++){ const v=tris[3*f+e]; dv.setFloat32(o,pos[3*v],true);dv.setFloat32(o+4,pos[3*v+1],true);dv.setFloat32(o+8,pos[3*v+2],true); o+=12; }
+    dv.setUint16(o,0,true); o+=2; }
+  return u8;
+}
+const CRC=(()=>{ const t=new Uint32Array(256); for(let n=0;n<256;n++){ let c=n; for(let k=0;k<8;k++) c=c&1?0xEDB88320^(c>>>1):c>>>1; t[n]=c>>>0; } return t; })();
+function crc32(u8){ let c=0xFFFFFFFF; for(let i=0;i<u8.length;i++) c=CRC[(c^u8[i])&0xFF]^(c>>>8); return (c^0xFFFFFFFF)>>>0; }
+function makeZip(name,data){
+  const nm=new TextEncoder().encode(name); const crc=crc32(data); const d=new Date();
+  const dosTime=(d.getHours()<<11)|(d.getMinutes()<<5)|(d.getSeconds()>>1), dosDate=((d.getFullYear()-1980)<<9)|((d.getMonth()+1)<<5)|d.getDate();
+  const lh=new ArrayBuffer(30), ld=new DataView(lh);
+  ld.setUint32(0,0x04034b50,true); ld.setUint16(4,20,true); ld.setUint16(6,0,true); ld.setUint16(8,0,true); ld.setUint16(10,dosTime,true); ld.setUint16(12,dosDate,true);
+  ld.setUint32(14,crc,true); ld.setUint32(18,data.length,true); ld.setUint32(22,data.length,true); ld.setUint16(26,nm.length,true); ld.setUint16(28,0,true);
+  const cd=new ArrayBuffer(46), cv=new DataView(cd);
+  cv.setUint32(0,0x02014b50,true); cv.setUint16(4,20,true); cv.setUint16(6,20,true); cv.setUint16(8,0,true); cv.setUint16(10,0,true); cv.setUint16(12,dosTime,true); cv.setUint16(14,dosDate,true);
+  cv.setUint32(16,crc,true); cv.setUint32(20,data.length,true); cv.setUint32(24,data.length,true); cv.setUint16(28,nm.length,true); cv.setUint16(30,0,true); cv.setUint16(32,0,true); cv.setUint16(34,0,true); cv.setUint16(36,0,true); cv.setUint32(38,0,true); cv.setUint32(42,0,true);
+  const cdOff=30+nm.length+data.length, cdSize=46+nm.length;
+  const eo=new ArrayBuffer(22), ev=new DataView(eo);
+  ev.setUint32(0,0x06054b50,true); ev.setUint16(4,0,true); ev.setUint16(6,0,true); ev.setUint16(8,1,true); ev.setUint16(10,1,true); ev.setUint32(12,cdSize,true); ev.setUint32(16,cdOff,true); ev.setUint16(20,0,true);
+  return new Blob([lh,nm,data,cd,nm,eo],{type:'application/zip'});
+}
+let downloadsNS=null;
+(async()=>{ try{ if(window.claude&&window.claude.use){ downloadsNS=await window.claude.use('downloads'); if(downloadsNS) $('export-note').textContent='Delivered as a .zip holding the binary STL (the viewer only saves zipped meshes). Same units and orientation as the input.'; } }catch(e){} })();
+$('btn-export').onclick=async()=>{
+  if(!state.mesh) return; const base=(state.fileName||'scan').replace(/\.stl$/i,'')||'scan'; const stl=toSTL(state.mesh);
+  if(downloadsNS){
+    try{ await downloadsNS.save({filename:base+'_debonded.zip',data:makeZip(base+'_debonded.stl',stl)}); status('Saved '+base+'_debonded.zip'); }
+    catch(err){ if(err&&err.code==='declined') status('Export cancelled.'); else status('Export failed: '+(err&&err.message||err),null,true); }
+  } else {
+    const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([stl],{type:'model/stl'})); a.download=base+'_debonded.stl'; document.body.appendChild(a); a.click(); setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},2000); status('Exported '+a.download);
+  }
+};
+
+/* ------------------------------------------------------------------- boot */
+window.addEventListener('error',e=>{ status('Something went wrong: '+(e.message||e),null,true); setBusy(false); });
+window.addEventListener('unhandledrejection',e=>{ status('Something went wrong: '+(e.reason&&e.reason.message||e.reason),null,true); setBusy(false); });
+document.addEventListener('keydown',e=>{ if(e.key==='1') setMode('orbit'); if(e.key==='2') setMode('add'); if(e.key==='3') setMode('erase'); });
+if(window.THREE&&THREE.OrbitControls){ initThree(); $('btn-sample').click(); }
+else status('The 3D library did not load. Reload the page.',null,true);
+</script>
