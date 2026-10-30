@@ -4,15 +4,22 @@ Detects orthodontic brackets on a post-treatment intraoral STL, removes them tog
 
 Open `index.html` in Chrome (or any current browser). The sample pair loads on start so the whole flow can be seen before loading a real scan.
 
+## Run it
+
+- **Desktop app (Electron).** `npm install` then `npm start`. `npm run dist` builds an installer for the current platform (`dist:win`, `dist:mac`, `dist:linux` for a specific one) into `dist/`. The desktop app saves STLs through native dialogs and works offline (three.js is vendored).
+- **Browser.** Open `index.html` directly, or serve the folder. Export downloads the STL.
+
 ## Workflow
 
 1. **Load scans.** The post-ortho STL (with the brackets) is all that's needed. Adding the pre-ortho STL is optional and improves both detection and the rebuilt surface.
-2. **Check the brackets.** Detection runs automatically. Red parts will be removed; amber parts were considered and rejected (each with a reason). Click any part to include or exclude it, click a missed bracket to grab it from that point, or use the add/erase brushes. The ring taken around each bracket for cement is a live slider.
-3. **Remove and rebuild.** One click. After the rebuild a second automatic look picks up small remnants (hook bases, wing tips, cement blobs) beside the rebuilt areas and offers them for removal.
-4. **Touch up.** Sculpt directly on the result with the toolbar brushes: Cut lowers a leftover bump, Build raises a dip, Smooth evens out a rough spot, Flatten levels an area to its surroundings. A ring on the surface shows the brush footprint. Keys 1–7 switch tools, [ and ] resize the brush.
+2. **Check brackets.** Detection runs automatically. Red parts will be removed; amber parts were considered and rejected. Click any part to include or exclude it, click a missed bracket to grab it, or paint with Mark / Unmark. The ring taken around each bracket for cement is a live slider.
+3. **Remove & rebuild.** One click. A second automatic look afterwards picks up small remnants (hook bases, wing tips, cement blobs) beside the rebuilt areas and offers them for removal.
+4. **Touch up.** **Lasso** circles any area to remove and rebuild it in one gesture. **Cut**, **Build**, **Smooth** and **Flatten** sculpt the surface under a brush whose footprint is shown on the surface. Everything (selection edits, strokes, removals) is in one undo/redo history: the Undo / Redo buttons in the top bar, or Ctrl+Z / Ctrl+Y.
+5. **Export** a binary STL under the name you choose (same units and orientation as the input).
 
-Everything you do (selection changes, strokes, removals) goes into one history: undo and redo arrows in the toolbar, Ctrl+Z / Ctrl+Y. The pad at the bottom right rotates, moves and zooms the view with buttons (arrow keys, Shift+arrows and +/− do the same) and has Front, Occlusal, Left and Right preset views.
-5. **Export** the binary STL (same units and orientation as the input).
+**Batch.** The Batch panel queues up to six post-ortho scans (each may get its own pre-ortho scan). They are processed one after another with the automatic pipeline; each result is kept in the app under an editable name, survives a restart, can be opened for touch-up, and is saved singly or all at once into a folder.
+
+**View.** Drag to orbit, wheel to zoom. The pad at the bottom right rotates or moves the scan with buttons (toggle Rotate / Move), zooms, and has Front / Occlusal / Left / Right preset views. Keys 1–8 pick tools, `[` `]` resize the brush, arrows rotate (Shift+arrows move), `+` `−` zoom.
 
 ## How it works
 
@@ -26,5 +33,6 @@ All thresholds are under *Advanced settings*. Measured on a real pair, the rebui
 
 ## Notes
 
-- Export inside claude.ai arrives as a `.zip` holding the STL; the local file saves the `.stl` directly.
-- Libraries: three.js r128 (viewer only). All geometry processing is in `index.html`.
+- Export inside claude.ai arrives as a `.zip` holding the STL; the desktop app and the local file save the `.stl` directly.
+- Libraries: three.js r128 (viewer only, vendored in `vendor/`). All geometry processing is in `index.html`.
+- Repository layout: `index.html` (the whole app), `vendor/` (three.js), `electron/` (desktop wrapper), `package.json` (Electron scripts and build config).
