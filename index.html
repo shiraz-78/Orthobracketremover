@@ -265,10 +265,10 @@ canvas#lasso{position:absolute;inset:0;width:100%;height:100%;pointer-events:non
         <div class="ctl">
           <label for="p-radius">Tooth fit radius</label><output id="o-radius">4.00 mm</output>
           <input type="range" id="p-radius" min="2.5" max="8" step="0.25" value="4">
-          <label for="p-diff">Change threshold</label><output id="o-diff">0.30 mm</output>
-          <input type="range" id="p-diff" min="0.06" max="0.80" step="0.02" value="0.30">
-          <label for="p-band">Search band</label><output id="o-band">1.00 mm</output>
-          <input type="range" id="p-band" min="0.25" max="6" step="0.25" value="1">
+          <label for="p-diff">Change threshold</label><output id="o-diff">0.15 mm</output>
+          <input type="range" id="p-diff" min="0.06" max="0.80" step="0.01" value="0.15">
+          <label for="p-band">Search band</label><output id="o-band">2.00 mm</output>
+          <input type="range" id="p-band" min="0.25" max="6" step="0.25" value="2">
         </div>
         <label class="check"><input type="checkbox" id="p-usepre" checked> Rebuild holes from the pre-scan anatomy</label>
         <div class="row"><button id="btn-match" disabled>Match pre scan only</button></div>
@@ -524,7 +524,16 @@ async function computeReference(m,prog,mask){
   for(let v=0;v<nv;v++){ const ox=pos[3*v],oy=pos[3*v+1],oz=pos[3*v+2], dx=refN[3*v],dy=refN[3*v+1],dz=refN[3*v+2]; let hit=false;
     for(let t=3.0;t<=12&&!hit;t+=0.35){ const x=ox+dx*t,y=oy+dy*t,z=oz+dz*t; if(cmap.has(key(Math.floor(x*inv),Math.floor(y*inv),Math.floor(z*inv)))) hit=true; }
     free[v]=hit?0:1; }
-  return {offset,offsetC,steep,thin,refN,free};
+  // valley depth at 1 mm: how far each cell lies below the plane through its neighbourhood's centroid. Gum lines,
+  // embrasures and grooves are valleys; used to keep removals from crossing the gingival margin
+  const valleyC=new Float32Array(nc); const VR=Math.ceil(1.0*inv);
+  for(let c=0;c<nc;c++){ let sx=0,sy=0,sz=0,sw=0;
+    for(let dx=-VR;dx<=VR;dx++) for(let dy=-VR;dy<=VR;dy++) for(let dz=-VR;dz<=VR;dz++){ const o=cmap.get(key(ci[c]+dx,cj[c]+dy,ck[c]+dz)); if(o===undefined) continue;
+      const ex=cp[3*o]-cp[3*c],ey=cp[3*o+1]-cp[3*c+1],ez=cp[3*o+2]-cp[3*c+2]; if(ex*ex+ey*ey+ez*ez>1.0) continue; if(cn[3*o]*cn[3*c]+cn[3*o+1]*cn[3*c+1]+cn[3*o+2]*cn[3*c+2]<0.2) continue;
+      sx+=cp[3*o]*cnt[o];sy+=cp[3*o+1]*cnt[o];sz+=cp[3*o+2]*cnt[o];sw+=cnt[o]; }
+    valleyC[c]=sw?((sx/sw-cp[3*c])*cn[3*c]+(sy/sw-cp[3*c+1])*cn[3*c+1]+(sz/sw-cp[3*c+2])*cn[3*c+2]):0; }
+  const valley=new Float32Array(nv); for(let v=0;v<nv;v++){ const c=cellOf[v]; valley[v]=c>=0?valleyC[c]:0; }
+  return {offset,offsetC,steep,thin,refN,free,valley};
 }
 
 /* --------------------------------------------------------------- detection */
@@ -573,7 +582,7 @@ async function detect(){
   // a short reach through anything still clearly raised (a wall ring with a gap, hooks, the base pad)
   const crease=-(+$('p-crease').value);
   // (a hook or ligature wing reads as 'thin' because its cell's normals cancel; anything that far above the tooth is hardware regardless)
-  growDistance(m,Uint8Array.from(grown),u=>!bnear[u]&&(!thin[u]||offset[u]>0.5)&&facial[u]>-0.3&&offset[u]>crease&&(d[u]>seedThr*0.4||offsetC[u]>tau||(offset[u]>tau&&steep[u]<0.8)),1.2,grown);
+  const valley=F.valley; growDistance(m,Uint8Array.from(grown),u=>!bnear[u]&&(!thin[u]||offset[u]>0.5)&&facial[u]>-0.3&&offset[u]>crease&&!(valley&&valley[u]>GUM_VALLEY&&offset[u]<0.25)&&(d[u]>seedThr*0.4||offsetC[u]>tau||(offset[u]>tau&&steep[u]<0.8)),1.2,grown);
   // connected parts of the grown set become candidates, each scored on what a bracket looks like
   const candOf=new Int32Array(nv).fill(-1); const cands=[]; const stack=[];
   for(let v0=0;v0<nv;v0++){
@@ -592,7 +601,9 @@ async function detect(){
     if(cand.plateau<0.02&&cand.meanOff<0.2) cand.reasons.push('no flat top');
     if(cand.diam<Math.max(0.8,minD*0.5)){ for(const v of verts) candOf[v]=-1; continue; } // specks are not even shown
     // second pass over a result: a small raised remnant right beside a rebuilt patch (a hook base, a wing tip, a cement blob) is a leftover
-    if(state.secondLook&&state.isPatch&&cand.maxOff>=0.5&&cand.diam<=2.5&&cand.facial>=0.2){ let nearPatch=0; for(const v of verts){ for(let i=adjStart[v];i<adjStart[v+1];i++) if(state.isPatch[adj[i]]){ nearPatch++; break; } } if(nearPatch>=3){ cand.reasons=cand.reasons.filter(r=>r!=='too small'&&r!=='barely raised'&&r!=='no flat top'); cand.leftover=true; } }
+    if(state.secondLook&&state.isPatch&&cand.maxOff>=0.5&&cand.diam<=2.5&&cand.facial>=0.2){ let nearPatch=0, onPatch=0; for(const v of verts){ onPatch+=state.isPatch[v]; for(let i=adjStart[v];i<adjStart[v+1];i++) if(state.isPatch[adj[i]]){ nearPatch++; break; } }
+      // a remnant is original surface beside a patch; something that is mostly rebuilt surface is the patch's own shape
+      if(nearPatch>=3&&onPatch<0.5*verts.length){ cand.reasons=cand.reasons.filter(r=>r!=='too small'&&r!=='barely raised'&&r!=='no flat top'); cand.leftover=true; } }
     if(state.secondLook&&!cand.leftover&&!cand.reasons.length) cand.reasons.push('second look: only small leftovers beside rebuilt areas are taken');
     cand.accepted=cand.reasons.length===0; cands.push(cand);
   }
@@ -664,6 +675,9 @@ function footprintRing(m,cand,r){
   return out;
 }
 /* Concave creases (gingival sulcus, interproximal embrasures) sit below the reference surface; brackets and cement never cross them. */
+/* gum line: a 1 mm-scale valley that is not part of something raised (a bracket's own base corner is raised) */
+const GUM_VALLEY=0.10;
+function gumLineFn(){ const F=state.features; if(!F||!F.valley) return ()=>false; const V=F.valley, off=F.cleanOffset||F.offset; return u=>V[u]>GUM_VALLEY&&off[u]<0.25; }
 function crownOnly(){ const F=state.features; if(!F) return ()=>true; const off=F.cleanOffset||F.offset, thin=F.thin, lim=-(+$('p-crease').value); return u=>off[u]>lim&&!thin[u]; }
 function applySelection(){
   const m=state.mesh; if(!m) return; const {nv,adjStart,adj}=m; const margin=+$('p-margin').value, auto=$('sel-auto').checked; const onCrown=crownOnly();
@@ -672,7 +686,12 @@ function applySelection(){
     let dil;
     if(c.extra){ const seed=new Uint8Array(nv); for(const v of c.verts) seed[v]=1; for(const v of c.extra) seed[v]=1; dil=new Uint8Array(nv); growDistance(m,seed,()=>true,0.15,dil); }
     else { // the first millimetre around a bracket is its own base pad and cement and is always taken; beyond that the crease guard applies
-      dil=footprintRing(m,c,Math.min(margin,1.0)); for(const v of c.verts) dil[v]=1; if(margin>1.0) growDistance(m,Uint8Array.from(dil),onCrown,margin-1.0,dil); }
+      // the ring is measured from the bracket's footprint but kept on the crown: it may not cross a gum line except
+      // within 0.25 mm of the bracket itself (its own base corner)
+      const ring=footprintRing(m,c,Math.min(margin,1.0)); const near=footprintRing(m,c,0.25); const gum=gumLineFn();
+      const core=new Uint8Array(nv); for(const v of c.verts){ core[v]=1; ring[v]=1; near[v]=1; }
+      dil=new Uint8Array(nv); growDistance(m,core,u=>ring[u]&&(near[u]||!gum(u)),1e9,dil);
+      if(margin>1.0) growDistance(m,Uint8Array.from(dil),u=>onCrown(u)&&!gum(u),margin-1.0,dil); }
     for(let v=0;v<nv;v++) if(dil[v]){ base[v]=1; partId[v]=ci; } }
   if(state.manualAdd) for(let v=0;v<nv;v++) if(state.manualAdd[v]) base[v]=1;
   if(state.manualErase) for(let v=0;v<nv;v++) if(state.manualErase[v]) base[v]=0;
@@ -766,7 +785,77 @@ async function removeAndFill(){
   trace();
   // what the user sees as "holes": connected flagged regions, not outline sub-loops (a jagged rim can pinch into several)
   let regions=0; { const seen=new Uint8Array(nv); const st=[]; for(let v0=0;v0<nv;v0++){ if(!flag[v0]||seen[v0]) continue; regions++; seen[v0]=1; st.length=0; st.push(v0); while(st.length){ const v=st.pop(); for(let i=adjStart[v];i<adjStart[v+1];i++){ const u=adj[i]; if(flag[u]&&!seen[u]){ seen[u]=1; st.push(u); } } } } }
-  const newPos=[]; let newCount=0; const patchTris=[]; let preHits=0, preTotal=0, preSkipped=0;
+  const newPos=[]; let newCount=0; const patchTris=[]; let preHits=0, preTotal=0, preSkipped=0, gumCarved=0;
+  /* When a gum line runs into a hole on one side and out on the other (a molar tube bonded on the margin, gum grown
+     over a bracket), the smooth fill would erase the sulcus. Find where the gum line meets the hole's rim, join the
+     entry and exit with a curve that follows the line's direction, and carve the sulcus along it. */
+  let nbrsFor=()=>null;
+  function carveGumLine(loop,X,nI){
+    const F=state.features; if(!F||!F.valley||nI<4) return; const gum=gumLineFn(); const up=F.frame.up; const off=F.cleanOffset||F.offset;
+    // margin samples: gum-line points of the untouched surface within 2 mm of the rim, labelled with the rim vertex they are nearest to
+    const dist=new Float32Array(nv).fill(Infinity), org=new Int32Array(nv).fill(-1); const q=[];
+    loop.forEach((v,i)=>{ dist[v]=0; org[v]=i; q.push(v); });
+    for(let h=0;h<q.length;h++){ const a=q[h]; for(let i=adjStart[a];i<adjStart[a+1];i++){ const u=adj[i]; if(flag[u]) continue; const nd=dist[a]+edgeLength(m,a,u); if(nd<dist[u]&&nd<=2.0){ dist[u]=nd; org[u]=org[a]; q.push(u); } } }
+    const samples=[]; for(const u of q){ if(dist[u]>0&&gum(u)) samples.push(u); }
+    if(samples.length<6){ if(globalThis.DEBUG_GUM){ let x=0,y=0,z=0; for(const v of loop){x+=pos[3*v];y+=pos[3*v+1];z+=pos[3*v+2];} console.log('gum carve @',(x/loop.length).toFixed(1),(y/loop.length).toFixed(1),(z/loop.length).toFixed(1),'no gum line near'); } return; }
+    // contacts: runs of rim vertices with a gum-line sample within 0.8 mm
+    const n=loop.length; const touch=new Array(n).fill(0); for(const u of samples) if(dist[u]<=0.8) touch[org[u]]++;
+    const clusters=[]; const seen=new Uint8Array(n);
+    for(let i=0;i<n;i++){ if(!touch[i]||seen[i]) continue; const idx=[]; let j=i; while(touch[j]&&!seen[j]){ seen[j]=1; idx.push(j); j=(j+1)%n; } j=(i-1+n)%n; while(touch[j]&&!seen[j]){ seen[j]=1; idx.push(j); j=(j-1+n)%n; } clusters.push(idx); }
+    const dbg=(why)=>{ if(globalThis.DEBUG_GUM){ let x=0,y=0,z=0; for(const v of loop){x+=pos[3*v];y+=pos[3*v+1];z+=pos[3*v+2];} console.log('gum carve @',(x/loop.length).toFixed(1),(y/loop.length).toFixed(1),(z/loop.length).toFixed(1),why); } };
+    if(clusters.length<2){ dbg('one contact or none ('+clusters.length+')'); return; }
+    let hcx=0,hcy=0,hcz=0; for(const v of loop){ hcx+=pos[3*v];hcy+=pos[3*v+1];hcz+=pos[3*v+2]; } hcx/=n;hcy/=n;hcz/=n;
+    let hnx=0,hny=0,hnz=0; for(const v of loop){ hnx+=vn[3*v];hny+=vn[3*v+1];hnz+=vn[3*v+2]; } { const l=Math.hypot(hnx,hny,hnz)||1; hnx/=l;hny/=l;hnz/=l; }
+    const C=clusters.map(idx=>{ const set=new Set(idx); const pts=samples.filter(u=>set.has(org[u]));
+      let px=0,py=0,pz=0; for(const i of idx){ const v=loop[i]; px+=pos[3*v];py+=pos[3*v+1];pz+=pos[3*v+2]; } px/=idx.length;py/=idx.length;pz/=idx.length;
+      // direction of the margin near this contact: principal axis of its samples, pointed into the hole
+      let mx=0,my=0,mz=0; for(const u of pts){ mx+=pos[3*u];my+=pos[3*u+1];mz+=pos[3*u+2]; } mx/=pts.length;my/=pts.length;mz/=pts.length;
+      const cov=[0,0,0,0,0,0,0,0,0]; for(const u of pts){ const a=[pos[3*u]-mx,pos[3*u+1]-my,pos[3*u+2]-mz]; for(let r=0;r<3;r++) for(let c=0;c<3;c++) cov[3*r+c]+=a[r]*a[c]; }
+      let t=[1,0,0]; for(let it=0;it<30;it++){ const nt=mulv(cov,t[0],t[1],t[2]); const l=Math.hypot(nt[0],nt[1],nt[2])||1; t=[nt[0]/l,nt[1]/l,nt[2]/l]; }
+      if((hcx-px)*t[0]+(hcy-py)*t[1]+(hcz-pz)*t[2]<0) t=t.map(x=>-x);
+      const vals=pts.map(u=>Math.max(0,-off[u])).sort((a,b)=>a-b);
+      return {idx,p:[px,py,pz],t,n:pts.length,depth:vals[Math.floor(vals.length/2)]||0}; }).filter(c=>c.n>=4);
+    // how close the gum line comes to each rim vertex (from outside)
+    const rimNear=new Float32Array(n).fill(Infinity); for(const u of samples) if(dist[u]<rimNear[org[u]]) rimNear[org[u]]=dist[u];
+    // best pair: entry and exit both pointing along the chord between them, chord across the tooth (not up its long axis)
+    let best=null;
+    for(let a=0;a<C.length;a++) for(let b=a+1;b<C.length;b++){
+      const d=[C[b].p[0]-C[a].p[0],C[b].p[1]-C[a].p[1],C[b].p[2]-C[a].p[2]]; const L=Math.hypot(d[0],d[1],d[2]); if(L<1.0) continue; const dir=d.map(x=>x/L);
+      // a gum line runs around the tooth: the chord and both entry directions lie across the tooth's long axis
+      // (an embrasure or groove runs along it)
+      if(Math.abs(dir[0]*up[0]+dir[1]*up[1]+dir[2]*up[2])>0.35) continue;
+      if(Math.abs(C[a].t[0]*up[0]+C[a].t[1]*up[1]+C[a].t[2]*up[2])>0.45||Math.abs(C[b].t[0]*up[0]+C[b].t[1]*up[1]+C[b].t[2]*up[2])>0.45) continue;
+      const sc=(C[a].t[0]*dir[0]+C[a].t[1]*dir[1]+C[a].t[2]*dir[2])-(C[b].t[0]*dir[0]+C[b].t[1]*dir[1]+C[b].t[2]*dir[2]);
+      if(sc<=1.4) continue;
+      // a line that crosses the hole is covered by it between entry and exit; one that runs alongside the rim
+      // (a cement skirt that merely reaches the crease) shows up next to the rim along one of the two arcs
+      const inA=new Set(C[a].idx), inB=new Set(C[b].idx); let alongside=false;
+      for(const dirStep of [1,-1]){ let i=C[a].idx[0], cnt=0, near=0;
+        for(let k=0;k<n;k++){ i=(i+dirStep+n)%n; if(inB.has(i)) break; if(inA.has(i)) continue; cnt++; if(rimNear[i]<=1.2) near++; }
+        if(cnt>3&&near>0.4*cnt) alongside=true; }
+      if(alongside) continue;
+      if(!best||sc>best.sc) best={a:C[a],b:C[b],L,sc,tt:C[a].t[0]*C[b].t[0]+C[a].t[1]*C[b].t[1]+C[a].t[2]*C[b].t[2],ua:Math.abs(C[a].t[0]*up[0]+C[a].t[1]*up[1]+C[a].t[2]*up[2]),ub:Math.abs(C[b].t[0]*up[0]+C[b].t[1]*up[1]+C[b].t[2]*up[2]),cu:Math.abs(dir[0]*up[0]+dir[1]*up[1]+dir[2]*up[2])}; }
+    if(!best){ dbg('no crossing pair among '+C.length+' contacts: '+C.map(c=>'t·up='+Math.abs(c.t[0]*up[0]+c.t[1]*up[1]+c.t[2]*up[2]).toFixed(2)+' n='+c.n).join(', ')); return; }
+    // the line must split the hole (gum on one side, crown on the other), not run along its edge
+    { const d=[best.b.p[0]-best.a.p[0],best.b.p[1]-best.a.p[1],best.b.p[2]-best.a.p[2]]; const side=[hny*d[2]-hnz*d[1],hnz*d[0]-hnx*d[2],hnx*d[1]-hny*d[0]];
+      let s1=0,s2=0; for(let l=0;l<nI;l++){ const r=(X[3*l]-best.a.p[0])*side[0]+(X[3*l+1]-best.a.p[1])*side[1]+(X[3*l+2]-best.a.p[2])*side[2]; if(r>0) s1++; else s2++; }
+      if(Math.min(s1,s2)<0.2*nI){ dbg('runs along the edge ('+Math.min(s1,s2)+'/'+nI+')'); return; } }
+    // Hermite curve between the contacts, sampled every ~0.1 mm
+    const {a,b,L}=best; const S=Math.max(12,Math.ceil(L/0.1)); const curve=[];
+    for(let k=0;k<=S;k++){ const s=k/S, h00=2*s*s*s-3*s*s+1, h10=s*s*s-2*s*s+s, h01=-2*s*s*s+3*s*s, h11=s*s*s-s*s;
+      curve.push([0,1,2].map(i=>h00*a.p[i]+h10*a.t[i]*L+h01*b.p[i]+h11*(-b.t[i])*L)); }
+    const depth=clamp(Math.max(a.depth,b.depth,0.12),0.10,0.25), w=0.8;
+    let moved=0; const disp=new Float64Array(nI);
+    for(let l=0;l<nI;l++){ let dmin=Infinity; for(const c of curve){ const dx=X[3*l]-c[0],dy=X[3*l+1]-c[1],dz=X[3*l+2]-c[2]; const dd=dx*dx+dy*dy+dz*dz; if(dd<dmin) dmin=dd; } const d=Math.sqrt(dmin);
+      if(d>=w) continue;
+      // fade in over the first millimetre from the rim: the fill already dips to meet the real sulcus there
+      let r=Infinity; for(const v of loop){ const dx=X[3*l]-pos[3*v],dy=X[3*l+1]-pos[3*v+1],dz=X[3*l+2]-pos[3*v+2]; const dd=dx*dx+dy*dy+dz*dz; if(dd<r) r=dd; } r=Math.sqrt(r);
+      const fr=Math.min(1,r/1.0), fade=fr*fr*(3-2*fr); const c=0.5+0.5*Math.cos(Math.PI*d/w); disp[l]=depth*c*fade; if(disp[l]>0.01) moved++; }
+    // one light relaxation of the displacement field so the groove has no facets
+    for(let it=0;it<2;it++){ const nd=Float64Array.from(disp); for(let l=0;l<nI;l++){ const nb_=nbrsFor(l); if(!nb_) continue; let sum=0,c=0; for(const j of nb_){ if(j<nI){ sum+=disp[j]; c++; } else c++; } nd[l]=0.5*disp[l]+0.5*(c?sum/c:disp[l]); } disp.set(nd); }
+    for(let l=0;l<nI;l++){ const k=disp[l]; X[3*l]-=k*hnx; X[3*l+1]-=k*hny; X[3*l+2]-=k*hnz; }
+    if(moved>3){ gumCarved++; dbg('CARVED depth '+depth.toFixed(2)+' len '+L.toFixed(1)+' score '+best.sc.toFixed(2)+' ta·tb '+best.tt.toFixed(2)+' ta·up '+best.ua.toFixed(2)+' tb·up '+best.ub.toFixed(2)+' chord·up '+best.cu.toFixed(2)); }
+  }
   const addV=(x,y,z)=>{ newPos.push(x,y,z); return nv+newCount++; };
   const P=i=>i<nv?[pos[3*i],pos[3*i+1],pos[3*i+2]]:[newPos[3*(i-nv)],newPos[3*(i-nv)+1],newPos[3*(i-nv)+2]];
   let filled=0;
@@ -870,7 +959,7 @@ async function removeAndFill(){
     let part=null; if(state.parts&&state.pre&&$('p-usepre').checked&&state.partId){ for(const v of loop){ for(let i=adjStart[v];i<adjStart[v+1];i++){ const u=adj[i]; if(flag[u]&&state.partId[u]>=0){ part=state.parts[state.partId[u]]; break; } } if(part) break; } if(part&&!part.ok) part=null; }
     // the pre scan is only a safe guide for this hole if the rim around it actually sits on the fitted pre surface;
     // a tooth that changed (a deciduous tooth replaced, a crown that was reshaped) gives a rim that disagrees badly
-    if(part&&state.diff){ let n=0,bad=0; for(const v of loop){ const d=state.diff[v]; if(isNaN(d)) continue; n++; if(Math.abs(d)>0.5) bad++; } if(n&&bad/n>0.15){ part=null; preSkipped++; } }
+    if(part&&state.diff){ let n=0,bad=0; for(const v of loop){ const d=state.diff[v]; if(isNaN(d)) continue; n++; if(Math.abs(d)>0.5) bad++; } if(n&&bad/n>0.5){ part=null; preSkipped++; } }
     const nb=new Map(); const add=(a,b)=>{ let s=nb.get(a); if(!s){s=new Set();nb.set(a,s);} s.add(b); };
     for(const t of ptris){ for(let e=0;e<3;e++){ const a=t[e],b=t[(e+1)%3]; add(a,b); add(b,a); } }
     for(const v of loop){ for(let i=adjStart[v];i<adjStart[v+1];i++){ const u=adj[i]; if(!flag[u]) add(v,u); } }
@@ -912,8 +1001,11 @@ async function removeAndFill(){
     if(part){ // snap the patch onto the fitted pre-treatment anatomy where the rim agrees with it
       const pre=state.pre, thr=+$('p-diff').value; let hit=0;
       // rim trust: 1 where the post rim already sits on the pre surface, 0 where the pre surface is elsewhere (moved gingiva, neighbour tooth)
+      // the pre scan supplies the shape; the harmonic rim correction below carries that shape onto the rim as it is now
+      // (inflamed gingiva, a little growth, residual fit error), so the only untrusted rim points are those the pre scan
+      // does not cover at all
       const W=new Float64Array(nIB).fill(1);
-      for(let l=nI;l<nIB;l++){ const d=state.diff?state.diff[ids[l]]:NaN; W[l]=isNaN(d)?0:clamp(1-(Math.abs(d)-thr)/0.5,0,1); }
+      for(let l=nI;l<nIB;l++){ const d=state.diff?state.diff[ids[l]]:NaN; W[l]=isNaN(d)?0:1; }
       // interior trust fades in over ~1 mm from any untrusted rim segment
       const dist=new Float64Array(nIB).fill(Infinity); const q=[];
       for(let l=nI;l<nIB;l++) if(W[l]<0.5){ dist[l]=0; q.push(l); }
@@ -926,13 +1018,14 @@ async function removeAndFill(){
       // residual of the post rim against the pre surface, interpolated harmonically across the patch:
       // the pre scan supplies the anatomy, this correction absorbs any small rigid-fit error so the patch meets the rim exactly
       const C=new Float64Array(3*nIB);
-      for(let l=nI;l<nIB;l++){ if(hitQ[l]){ C[3*l]=X[3*l]-Q[3*l];C[3*l+1]=X[3*l+1]-Q[3*l+1];C[3*l+2]=X[3*l+2]-Q[3*l+2]; } }
+      for(let l=nI;l<nIB;l++){ if(hitQ[l]){ let cx=X[3*l]-Q[3*l],cy=X[3*l+1]-Q[3*l+1],cz=X[3*l+2]-Q[3*l+2]; const cl=Math.hypot(cx,cy,cz); if(cl>1.0){ cx*=1.0/cl;cy*=1.0/cl;cz*=1.0/cl; } C[3*l]=cx;C[3*l+1]=cy;C[3*l+2]=cz; } }
       for(let k=0;k<300;k++){ for(let l=0;l<nI;l++){ const nb_=nbrs[l]; for(let o=0;o<3;o++){ let s=0; for(let i=0;i<nb_.length;i++) s+=C[3*nb_[i]+o]; C[3*l+o]=s/nb_.length; } } }
       for(let l=0;l<nI;l++){ if(!hitQ[l]) continue; const w=W[l];
         for(let o=0;o<3;o++) X[3*l+o]+=w*((Q[3*l+o]+C[3*l+o])-X[3*l+o]); if(w>0.5) hit++; }
       for(let k=0;k<3;k++){ for(let l=0;l<nI;l++){ const nb_=nbrs[l]; for(let o=0;o<3;o++){ let s=0; for(let i=0;i<nb_.length;i++) s+=X[3*nb_[i]+o]; X[3*l+o]+=0.3*(s/nb_.length-X[3*l+o]); } } }
       preHits+=hit; preTotal+=nI;
     }
+    if(!part){ nbrsFor=l=>nbrs[l]; carveGumLine(loop,X,nI); }
     for(let l=0;l<nI;l++){ const j=3*(ids[l]-nv); newPos[j]=X[3*l];newPos[j+1]=X[3*l+1];newPos[j+2]=X[3*l+2]; }
   }
 
@@ -951,7 +1044,7 @@ async function removeAndFill(){
   filled=regions; $('s-holes').textContent=filled; $('s-patch').textContent=patchTris.length.toLocaleString();
   $('s-comps').textContent='–'; $('s-flag').textContent='0';
   showMesh(false); if(state.mode==='add'||state.mode==='erase') setMode('orbit');
-  status(preTotal?`${filled} hole${filled===1?'':'s'} filled from the pre-scan anatomy (${Math.round(100*preHits/preTotal)}% of patch points landed on it${preSkipped?`; ${preSkipped} hole${preSkipped===1?'':'s'} rebuilt from enamel instead because the pre scan disagreed around them`:''}). Export, or Run again for a second pass if anything remains.`:`${filled} hole${filled===1?'':'s'} filled from the surrounding enamel. Export, or Run again if anything remains.`);
+  status(preTotal?`${filled} hole${filled===1?'':'s'} filled from the pre-scan anatomy (${Math.round(100*preHits/preTotal)}% of patch points landed on it${preSkipped?`; ${preSkipped} hole${preSkipped===1?'':'s'} rebuilt from enamel instead because the pre scan disagreed around them`:''}). Export, or Run again for a second pass if anything remains.`:`${filled} hole${filled===1?'':'s'} filled from the surrounding enamel${gumCarved?`; the gum line was carried across ${gumCarved}`:''}. Export, or Run again if anything remains.`);
 }
 
 /* ------------------------------------------------------------------ sample */
@@ -1168,12 +1261,14 @@ async function matchPre(){
     else if(part.preHeight<0.15){ if(!part.userSet) part.accepted=false; if(!part.reasons.includes('matches the pre-ortho anatomy')) part.reasons.push('matches the pre-ortho anatomy'); }
     if(!part.userSet&&part.accepted) verified++;
     // from an accepted part, grow through points that rise above the fitted pre surface, within a band and on surfaces facing the same way
-    if(part.accepted){ const [nx,ny,nz]=part.normal; const core=new Uint8Array(nv); for(const v of part.verts) core[v]=1; const mg=+$('p-margin').value; const seed=footprintRing(m,part,Math.min(mg,1.0)); for(const v of part.verts) seed[v]=1; const tmp=new Uint8Array(nv);
+    if(part.accepted){ const [nx,ny,nz]=part.normal; const core=new Uint8Array(nv); for(const v of part.verts) core[v]=1; const mg=+$('p-margin').value; const ringP=footprintRing(m,part,Math.min(mg,1.0)); const nearP=footprintRing(m,part,0.25); const gumP=gumLineFn(); for(const v of part.verts){ ringP[v]=1; nearP[v]=1; } const seed=new Uint8Array(nv); growDistance(m,core,u=>ringP[u]&&(nearP[u]||!gumP(u)),1e9,seed); const tmp=new Uint8Array(nv);
       // keep growing while the surface stands above the pre anatomy, over flat-ish surface facing the bracket's way
       // (bracket base, cement); steep surface is an embrasure wall or a neighbouring tooth and stops the growth
       const refN=state.features.refN, steep=state.features.steep;
-      growDistance(m,seed,u=>diff[u]>thr&&steep[u]>0.4&&(refN[3*u]*nx+refN[3*u+1]*ny+refN[3*u+2]*nz)>0.3,band,tmp);
-      const extra=[]; for(let v=0;v<nv;v++) if(tmp[v]&&!core[v]) extra.push(v); part.extra=extra; }
+      const gumP2=gumLineFn(); growDistance(m,seed,u=>diff[u]>thr&&!gumP2(u)&&(refN[3*u]*nx+refN[3*u+1]*ny+refN[3*u+2]*nz)>0.2,band,tmp);
+      // with the pre scan in hand, the removal set is: the bracket itself plus everything in the ring or band that stands above
+      // the fitted pre anatomy; ring points that already match it are intact enamel or gingiva and are left alone
+      const extra=[]; for(let v=0;v<nv;v++) if(tmp[v]&&!core[v]&&!(Math.abs(diff[v])<=thr)) extra.push(v); part.extra=extra; part.preTrim=true; }
   }
   state.diff=diff; applySelection();
   const fitted=parts.filter(p=>p.ok).length;
@@ -1434,9 +1529,9 @@ async function analyze(){
   status('Measuring edge angles',0.03); await tick();
   const {maxDih,isB}=computeDihedral(m);
   status('Building the reference tooth surface',0.1); await tick();
-  const {offset,offsetC,steep,thin,refN,free}=await computeReference(m,p=>status('Building the reference tooth surface',0.1+0.85*p));
+  const {offset,offsetC,steep,thin,refN,free,valley}=await computeReference(m,p=>status('Building the reference tooth surface',0.1+0.85*p));
   const bnear=new Uint8Array(m.nv); growDistance(m,isB,()=>true,1.5,bnear);
-  state.features={maxDih,isB,offset,offsetC,steep,thin,bnear,refN,free,frame:archFrame(m)};
+  state.features={maxDih,isB,offset,offsetC,steep,thin,bnear,refN,free,valley,frame:archFrame(m)};
   status('Analysis ready');
 }
 async function loadMesh(pos,tris,name){
@@ -1493,14 +1588,21 @@ $('btn-clear').onclick=()=>{ if(!state.mesh) return; recordAction('sel','clearin
 /* After a removal: look once more at the result for small raised leftovers beside the rebuilt areas (hook bases, wing tips, cement blobs). */
 async function secondPass(){
   if(!state.mesh||!state.isPatch) return;
-  const prev=$('msg').textContent;
-  state.secondLook=true; try{ await analyze(); await detect(); } finally { state.secondLook=false; }
-  const left=state.cands.filter(c=>c.leftover&&c.on).length; const other=state.cands.filter(c=>c.on).length-left;
-  if(left||other){ if($('p-autoremove').checked){ await removeAndFill(); status(`Second pass: ${left+other} leftover${left+other===1?'':'s'} removed. Export when ready.`); }
-    else status(`Done. A second look found ${left+other} small leftover${left+other===1?'':'s'} beside the rebuilt areas (red): press Remove to take them, click any you disagree with, or Export as is.`); }
-  else { state.cands=[]; state.candOf=null; applySelection(); status(prev.replace(/ Export, or Run again.*$/,'')+' A second look found nothing left. Export when ready.'); }
+  const prev=$('msg').textContent.replace(/ Export, or Run again.*$/,'').replace(/\.$/,'');
+  let taken=0;
+  for(let pass=0;pass<2;pass++){
+    state.secondLook=true; try{ await analyze(); await detect(); } finally { state.secondLook=false; }
+    // only leftovers matter now; drop everything else so nothing amber is left on the result
+    const keep=state.cands.filter(c=>c.leftover&&c.on); const idx=new Map(keep.map((c,i)=>[c,i]));
+    const co=new Int32Array(state.mesh.nv).fill(-1); state.cands.forEach(c=>{ const i=idx.get(c); if(i===undefined) return; for(const v of c.verts) co[v]=i; });
+    state.cands=keep; state.candOf=co; applySelection();
+    if(!keep.length) break;
+    taken+=keep.length; await removeAndFill();
+  }
+  state.cands=[]; state.candOf=null; applySelection();
+  status(prev+(taken?`. A second look took ${taken} small remnant${taken===1?'':'s'} (hook bases, wing tips, cement) beside the rebuilt areas.`:'. A second look found nothing left.')+' Export when ready.');
 }
-$('btn-remove').onclick=async()=>{ if(!state.mesh||!state.flag||busy) return; setBusy(true); try{ const wasLeftover=state.cands&&state.cands.some(c=>c.leftover); await removeAndFill(); if(!wasLeftover) await secondPass(); }catch(e){ console.error(e); status('Removal failed: '+e.message,null,true);} setBusy(false); };
+$('btn-remove').onclick=async()=>{ if(!state.mesh||!state.flag||busy) return; setBusy(true); try{ await removeAndFill(); await secondPass(); }catch(e){ console.error(e); status('Removal failed: '+e.message,null,true);} setBusy(false); };
 $('btn-reset').onclick=()=>{ if(!state.original) return; state.mesh=state.original; clearHistory(); state.isPatch=null; state.features=null; state.cands=[]; state.candOf=null; state.manualAdd=null; state.manualErase=null; state.parts=null; state.flag=new Uint8Array(state.mesh.nv); showMesh(false); applySelection(); $('s-holes').textContent='–'; $('s-patch').textContent='–'; $('s-comps').textContent='–'; $('s-flag').textContent='0'; status('Back to the original scan.'); runAuto(); };
 $('v-fit').onclick=()=>fitView();
 /* ---- navigation pad: rotate / pan / zoom in small steps, held buttons repeat; preset views from the arch frame ---- */
