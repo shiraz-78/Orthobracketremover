@@ -9,7 +9,8 @@ Open `index.html` in Chrome (or any current browser). The sample pair loads on s
 1. **Load scans.** The post-ortho STL (with the brackets) is all that's needed. Adding the pre-ortho STL is optional and improves both detection and the rebuilt surface.
 2. **Check the brackets.** Detection runs automatically. Red parts will be removed; amber parts were considered and rejected (each with a reason). Click any part to include or exclude it, click a missed bracket to grab it from that point, or use the add/erase brushes. The ring taken around each bracket for cement is a live slider.
 3. **Remove and rebuild.** One click. After the rebuild a second automatic look picks up small remnants (hook bases, wing tips, cement blobs) beside the rebuilt areas and offers them for removal.
-4. **Export** the binary STL (same units and orientation as the input).
+4. **Touch up.** Sculpt directly on the result with the toolbar brushes: Cut lowers a leftover bump, Build raises a dip, Smooth evens out a rough spot, Flatten levels an area to its surroundings. A ring on the surface shows the brush footprint; strokes are undoable (Ctrl+Z). Keys 1–7 switch tools, [ and ] resize the brush.
+5. **Export** the binary STL (same units and orientation as the input).
 
 ## How it works
 

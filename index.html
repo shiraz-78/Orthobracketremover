@@ -26,6 +26,7 @@ body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--font-ui);fo
   padding-block:16px 24px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:16px;display:flex;flex-direction:column;gap:18px}
 .stage{position:relative;min-width:0;min-height:0;background:var(--vp)}
 canvas#gl{display:block;width:100%;height:100%;touch-action:none;outline:none}
+canvas#gl.brush{cursor:none}
 canvas#gl:focus-visible{box-shadow:inset 0 0 0 2px var(--accent)}
 @media (max-width:760px){
   .app{grid-template-columns:1fr;grid-template-rows:52vh 1fr}
@@ -44,6 +45,7 @@ button.primary:hover,.btn.primary:hover{filter:brightness(1.08)}
 .btn:focus-within{outline:2px solid var(--accent);outline-offset:1px}
 .btn.busy{opacity:.45;pointer-events:none}
 button[disabled]{opacity:.45;cursor:default}
+button.primary[disabled]{background:var(--line);border-color:var(--line);color:var(--muted);opacity:1}
 button.on{background:var(--accent-soft);border-color:var(--accent);color:var(--fg)}
 .file{position:relative;overflow:hidden}
 .file input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%}
@@ -64,8 +66,18 @@ input[type=range]{grid-column:1/-1;width:100%;accent-color:var(--accent);margin:
 .status .msg.err{border-color:var(--flag);color:var(--flag)}
 .bar{height:3px;background:var(--line);border-radius:2px;overflow:hidden;width:min(100%,320px)}
 .bar i{display:block;height:100%;width:0;background:var(--accent);transition:width .15s}
-.hud{position:absolute;top:10px;right:max(12px,env(safe-area-inset-right,0px));display:flex;gap:6px}
-.hud button{padding:5px 9px;font-size:12.5px}
+.toolbar{position:absolute;top:10px;left:12px;right:max(12px,env(safe-area-inset-right,0px));display:flex;gap:10px;flex-wrap:wrap;align-items:center;pointer-events:none}
+.tgroup{display:flex;gap:2px;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:3px;pointer-events:auto;box-shadow:0 2px 10px rgba(0,0,0,.08);align-items:center}
+.tgroup button{border:0;background:transparent;padding:5px 9px;font-size:12.5px;display:inline-flex;align-items:center;gap:5px;border-radius:5px}
+.tgroup button svg{width:14px;height:14px;fill:currentColor}
+.tgroup button.on{background:var(--accent);color:var(--accent-ink)}
+.tgroup button.on svg [stroke="var(--panel)"]{stroke:var(--accent)}
+.tgroup button[disabled]{opacity:.4}
+.tgroup.size{padding:3px 10px;gap:8px;font-size:12px;color:var(--muted)}
+.tgroup.size input{width:90px;margin:0;accent-color:var(--accent)}
+.tgroup.size output{font-family:var(--font-num);font-variant-numeric:tabular-nums;min-width:48px;text-align:right}
+.tgroup.view{margin-left:auto}
+@media (max-width:760px){.tgroup.view{margin-left:0}.tgroup button{padding:5px 7px}.tgroup button span{display:none}}
 .note{font-size:12px;color:var(--muted);margin:0}
 section.step h2{display:flex;align-items:center;gap:8px;text-transform:none;letter-spacing:0;font-size:13.5px;color:var(--fg)}
 section.step h2 i{font-style:normal;display:inline-grid;place-items:center;width:20px;height:20px;border-radius:50%;background:var(--accent);color:var(--accent-ink);font-size:11px;font-family:var(--font-num)}
@@ -108,7 +120,7 @@ kbd{font-family:var(--font-num);font-size:11px;border:1px solid var(--line-stron
 
     <section class="step">
       <h2><i>2</i>Check the brackets</h2>
-      <p class="note">Detection runs by itself. <b style="color:var(--flag)">Red</b> parts will be removed; <b style="color:var(--warn)">amber</b> parts were considered and rejected. Click any part to include or exclude it. If a bracket was missed entirely, click on it and it is grabbed from that point.</p>
+      <p class="note">Detection runs by itself. <b style="color:var(--flag)">Red</b> will be removed; <b style="color:var(--warn)">amber</b> was considered and rejected. Click a part to flip it; click a missed bracket to grab it.</p>
       <div class="seg" role="radiogroup" aria-label="Selection">
         <label><input type="radio" name="sel" id="sel-auto" checked> Pick brackets for me</label>
         <label><input type="radio" name="sel" id="sel-manual"> I will click each bracket myself</label>
@@ -125,24 +137,14 @@ kbd{font-family:var(--font-num);font-size:11px;border:1px solid var(--line-stron
         <input type="range" id="p-margin" min="0" max="3" step="0.1" value="0.8">
         <span class="hint">Taken with the bracket to catch the cement flash. Changes show live; the rebuilt surface follows the enamel beyond it.</span>
       </div>
-      <div class="row">
-        <button id="m-orbit" class="on">Click parts</button>
-        <button id="m-erase">Erase brush</button>
-        <button id="m-add">Add brush</button>
-        <button id="btn-clearpaint">Undo painting</button>
-      </div>
-      <div class="ctl">
-        <label for="p-brush">Brush radius</label><output id="o-brush">1.5 mm</output>
-        <input type="range" id="p-brush" min="0.3" max="5" step="0.1" value="1.5">
-      </div>
-      <p class="note">With a brush, click the surface to paint a spot (dragging still orbits). Erase takes points out of the red area; Add puts them in. Keys <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> switch modes.</p>
+      <p class="note">To fix the selection by hand, pick <b>Mark</b> or <b>Unmark</b> in the toolbar over the 3D view and paint; the circle on the surface shows what the brush will touch. Right-drag orbits while a brush is active.</p>
     </section>
 
     <section class="step">
       <h2><i>3</i>Remove and rebuild</h2>
       <div class="row">
         <button class="primary" id="btn-remove" disabled>Remove brackets</button>
-        <button id="btn-undo" disabled>Undo</button>
+        <button id="btn-undo" disabled>Undo removal</button>
         <button id="btn-reset">Start over</button>
       </div>
       <label class="check"><input type="checkbox" id="p-autoremove"> Remove automatically after detection, without waiting for me</label>
@@ -153,12 +155,24 @@ kbd{font-family:var(--font-num);font-size:11px;border:1px solid var(--line-stron
     </section>
 
     <section class="step">
-      <h2><i>4</i>Export</h2>
+      <h2><i>4</i>Touch up</h2>
+      <p class="note">Sculpt directly on the result with the toolbar brushes: <b>Cut</b> takes down a leftover bump, <b>Build</b> raises a dip, <b>Smooth</b> evens out a rough spot, <b>Flatten</b> levels an area to its surroundings. Every stroke can be undone (<kbd>Ctrl</kbd>+<kbd>Z</kbd>). Keys <kbd>1</kbd>–<kbd>7</kbd> switch tools, <kbd>[</kbd> <kbd>]</kbd> resize the brush.</p>
+      <div class="ctl">
+        <label for="p-strength">Brush strength</label><output id="o-strength">50%</output>
+        <input type="range" id="p-strength" min="5" max="100" step="5" value="50">
+      </div>
+      <div class="row">
+        <button id="btn-undo-stroke" disabled>Undo stroke</button>
+        <button id="btn-auto" title="Run detection again on the current surface">Detect again</button>
+      </div>
+    </section>
+
+    <section class="step">
+      <h2><i>5</i>Export</h2>
       <div class="row">
         <button class="primary" id="btn-export">Export STL</button>
-        <button id="btn-auto">Detect again</button>
       </div>
-      <p class="note" id="export-note">Binary STL, same units and orientation as the input. Detect again runs a second pass on the current result.</p>
+      <p class="note" id="export-note">Binary STL, same units and orientation as the input.</p>
     </section>
 
     <details class="adv">
@@ -233,10 +247,26 @@ kbd{font-family:var(--font-num);font-size:11px;border:1px solid var(--line-stron
 
   <main class="stage">
     <canvas id="gl" tabindex="0" aria-label="3D view of the scan"></canvas>
-    <div class="hud">
-      <button id="v-fit" title="Fit view">Fit</button>
-      <button id="v-flat" title="Toggle flat shading">Flat</button>
-      <button id="v-pre" title="Show the aligned pre scan as a translucent overlay" disabled>Pre</button>
+    <div class="toolbar" role="toolbar" aria-label="Tools">
+      <div class="tgroup" aria-label="Select">
+        <button id="m-orbit" class="on" title="Click a part to include or exclude it; drag to orbit (1)"><svg viewBox="0 0 16 16"><path d="M3 2l9 6-4 1-2 4z"/></svg>Select</button>
+        <button id="m-add" title="Paint points into the removal area (2)"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="5"/><path d="M8 5v6M5 8h6" stroke="var(--panel)" stroke-width="1.6" fill="none"/></svg>Mark</button>
+        <button id="m-erase" title="Paint points out of the removal area (3)"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="5"/><path d="M5 8h6" stroke="var(--panel)" stroke-width="1.6" fill="none"/></svg>Unmark</button>
+      </div>
+      <div class="tgroup" aria-label="Sculpt">
+        <button id="m-cut" title="Lower the surface under the brush (4)"><svg viewBox="0 0 16 16"><path d="M2 10q3-5 6-1t6-1" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M8 3v4m-2-2l2 2 2-2" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>Cut</button>
+        <button id="m-build" title="Raise the surface under the brush (5)"><svg viewBox="0 0 16 16"><path d="M2 10q3-5 6-1t6-1" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M8 7V3m-2 2l2-2 2 2" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>Build</button>
+        <button id="m-smooth" title="Smooth the surface under the brush (6)"><svg viewBox="0 0 16 16"><path d="M2 11q2-6 6-4t6-3" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>Smooth</button>
+        <button id="m-flatten" title="Level the surface under the brush to its surroundings (7)"><svg viewBox="0 0 16 16"><path d="M2 9h12" stroke="currentColor" stroke-width="1.6"/><path d="M4 6l2 3 2-3 2 3 2-3" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".6"/></svg>Flatten</button>
+      </div>
+      <div class="tgroup size" aria-label="Brush size">
+        <label for="p-brush">Size</label><input type="range" id="p-brush" min="0.3" max="5" step="0.1" value="1.5"><output id="o-brush">1.5 mm</output>
+      </div>
+      <div class="tgroup view" aria-label="View">
+        <button id="v-fit" title="Fit view">Fit</button>
+        <button id="v-flat" title="Toggle flat shading">Flat</button>
+        <button id="v-pre" title="Show the aligned pre scan as a translucent overlay" disabled>Pre</button>
+      </div>
     </div>
     <div class="status">
       <div class="bar" id="bar" hidden><i id="bar-i"></i></div>
@@ -804,10 +834,10 @@ async function removeAndFill(){
   // carry forward patch marks from earlier passes
   if(state.isPatch){ for(let v=0;v<nv;v++){ const l=used[v]; if(l>=0&&state.isPatch[v]) isPatch[l]=1; } }
   state.history.push({mesh:m,isPatch:state.isPatch,features:state.features,cands:state.cands,candOf:state.candOf}); if(state.history.length>6) state.history.shift();
-  state.mesh=buildMesh(npos,ntris); state.isPatch=isPatch; state.flag=new Uint8Array(nvNew); state.features=null; state.comps=0; state.parts=null; state.partId=null; state.cands=[]; state.candOf=null; state.manualAdd=null; state.manualErase=null; state.diff=null; $('btn-remove').disabled=true; $('btn-remove').textContent='Remove brackets'; $('s-comps').textContent='–';
+  state.mesh=buildMesh(npos,ntris); state.strokes=[]; $('btn-undo-stroke').disabled=true; state.isPatch=isPatch; state.flag=new Uint8Array(nvNew); state.features=null; state.comps=0; state.parts=null; state.partId=null; state.cands=[]; state.candOf=null; state.manualAdd=null; state.manualErase=null; state.diff=null; $('btn-remove').disabled=true; $('btn-remove').textContent='Remove brackets'; $('s-comps').textContent='–';
   $('s-holes').textContent=filled; $('s-patch').textContent=patchTris.length.toLocaleString();
   $('s-comps').textContent='–'; $('s-flag').textContent='0';
-  showMesh(false);
+  showMesh(false); if(state.mode==='add'||state.mode==='erase') setMode('orbit');
   status(preTotal?`${filled} hole${filled===1?'':'s'} filled from the pre-scan anatomy (${Math.round(100*preHits/preTotal)}% of patch points landed on it${preSkipped?`; ${preSkipped} hole${preSkipped===1?'':'s'} rebuilt from enamel instead because the pre scan disagreed around them`:''}). Export, or Run again for a second pass if anything remains.`:`${filled} hole${filled===1?'':'s'} filled from the surrounding enamel. Export, or Run again if anything remains.`);
 }
 
@@ -1040,7 +1070,7 @@ async function matchPre(){
 }
 
 /* --------------------------------------------------------------- three.js */
-const state={mesh:null,original:null,history:[],features:null,flag:null,isPatch:null,comps:0,mode:'orbit',flat:false,fileName:'synthetic sample',pre:null,preName:'none',global:null,parts:null,partId:null,diff:null,showPre:false,cands:[],candOf:null,manualAdd:null,manualErase:null};
+const state={mesh:null,original:null,history:[],strokes:[],features:null,flag:null,isPatch:null,comps:0,mode:'orbit',flat:false,fileName:'synthetic sample',pre:null,preName:'none',global:null,parts:null,partId:null,diff:null,showPre:false,cands:[],candOf:null,manualAdd:null,manualErase:null};
 let renderer,scene,camera,controls,meshObj=null,geom=null,material;
 const COL={base:[0.80,0.76,0.68],flag:[0.84,0.27,0.17],cand:[0.90,0.66,0.22],patch:[0.22,0.58,0.40]};
 function initThree(){
@@ -1105,23 +1135,61 @@ function fitView(){
 }
 
 /* ------------------------------------------------------------------ brush */
-const ray=new THREE.Raycaster(); let downAt=null;
-$('gl').addEventListener('pointerdown',e=>{ downAt=[e.clientX,e.clientY]; });
-$('gl').addEventListener('pointerup',e=>{
-  if(!downAt||busy||!meshObj) { downAt=null; return; }
-  const moved=Math.hypot(e.clientX-downAt[0],e.clientY-downAt[1]); downAt=null; if(moved>5) return;
+const ray=new THREE.Raycaster(); let downAt=null, painting=false, lastPaintV=-1, strokeBackup=null;
+const BRUSH_MODES=['add','erase','cut','build','smooth','flatten'];
+const MODE_COL={add:0xd2452c,erase:0x4a7fd4,cut:0xb7791f,build:0x2e8b5e,smooth:0x0d7a86,flatten:0x7c6bb0};
+// hover ring: a circle of the brush radius lying on the surface under the pointer
+let cursorObj=null;
+function ensureCursor(){
+  if(cursorObj) return cursorObj;
+  const N=48; const pts=[]; for(let i=0;i<=N;i++){ const a=i/N*2*Math.PI; pts.push(new THREE.Vector3(Math.cos(a),Math.sin(a),0)); }
+  const g=new THREE.BufferGeometry().setFromPoints(pts);
+  const ring=new THREE.Line(g,new THREE.LineBasicMaterial({color:0xd2452c,depthTest:false,transparent:true,opacity:0.95}));
+  const disc=new THREE.Mesh(new THREE.CircleGeometry(1,N),new THREE.MeshBasicMaterial({color:0xd2452c,transparent:true,opacity:0.18,depthTest:false,side:THREE.DoubleSide}));
+  cursorObj=new THREE.Group(); cursorObj.add(ring); cursorObj.add(disc); cursorObj.renderOrder=999; cursorObj.visible=false; scene.add(cursorObj);
+  return cursorObj;
+}
+function pickAt(e){
+  if(!meshObj) return null;
   const r=$('gl').getBoundingClientRect(); const nd=new THREE.Vector2((e.clientX-r.left)/r.width*2-1,-((e.clientY-r.top)/r.height*2-1));
-  ray.setFromCamera(nd,camera); const hits=ray.intersectObject(meshObj); if(!hits.length) return;
+  ray.setFromCamera(nd,camera); const hits=ray.intersectObject(meshObj); if(!hits.length) return null;
   const h=hits[0]; const m=state.mesh; const vs=[h.face.a,h.face.b,h.face.c]; let best=vs[0],bd=Infinity;
   for(const v of vs){ const d=Math.hypot(m.pos[3*v]-h.point.x,m.pos[3*v+1]-h.point.y,m.pos[3*v+2]-h.point.z); if(d<bd){bd=d;best=v;} }
-  if(state.mode==='orbit'){
-    if(!state.candOf) return; let ci=state.candOf[best];
-    if(ci<0){ const seed=new Uint8Array(m.nv); seed[best]=1; const near=new Uint8Array(m.nv); growDistance(m,seed,()=>true,0.8,near); for(let v=0;v<m.nv&&ci<0;v++) if(near[v]&&state.candOf[v]>=0) ci=state.candOf[v]; }
-    if(ci>=0) toggleCandidate(ci); else if(!grabAt(best)) status('Nothing bracket-like at that point. Use the brush under Paint by hand for a free-form area.');
-    return;
-  }
-  paint(best,+$('p-brush').value,state.mode==='add');
+  return {v:best,point:h.point,normal:h.face.normal};
+}
+function updateCursor(e){
+  const c=ensureCursor(); const isBrush=BRUSH_MODES.includes(state.mode);
+  if(!isBrush||busy){ c.visible=false; return; }
+  const p=pickAt(e); if(!p){ c.visible=false; return; }
+  const m=state.mesh; const r=+$('p-brush').value;
+  // smoothed normal around the hit for a stable ring orientation
+  const n=new THREE.Vector3(m.vn[3*p.v],m.vn[3*p.v+1],m.vn[3*p.v+2]).normalize();
+  c.position.copy(p.point).addScaledVector(n,0.02); c.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),n); c.scale.setScalar(r);
+  const col=MODE_COL[state.mode]; c.children[0].material.color.setHex(col); c.children[1].material.color.setHex(col); c.visible=true;
+}
+$('gl').addEventListener('pointermove',e=>{ updateCursor(e); if(painting&&BRUSH_MODES.includes(state.mode)){ const p=pickAt(e); if(p&&p.v!==lastPaintV){ lastPaintV=p.v; applyBrush(p.v,e.shiftKey); } } });
+$('gl').addEventListener('pointerleave',()=>{ if(cursorObj) cursorObj.visible=false; });
+$('gl').addEventListener('pointerdown',e=>{
+  downAt=[e.clientX,e.clientY];
+  if(BRUSH_MODES.includes(state.mode)&&!busy&&e.button===0&&!e.altKey){ const p=pickAt(e); if(p){ painting=true; lastPaintV=p.v; controls.enabled=false; beginStroke(); applyBrush(p.v,e.shiftKey); try{ $('gl').setPointerCapture(e.pointerId); }catch(_){ } } }
 });
+$('gl').addEventListener('pointerup',e=>{
+  if(painting){ painting=false; controls.enabled=true; endStroke(); downAt=null; return; }
+  if(!downAt||busy||!meshObj) { downAt=null; return; }
+  const moved=Math.hypot(e.clientX-downAt[0],e.clientY-downAt[1]); downAt=null; if(moved>5) return;
+  if(state.mode!=='orbit') return;
+  const p=pickAt(e); if(!p) return; const m=state.mesh; const best=p.v;
+  if(!state.candOf) return; let ci=state.candOf[best];
+  if(ci<0){ const seed=new Uint8Array(m.nv); seed[best]=1; const near=new Uint8Array(m.nv); growDistance(m,seed,()=>true,0.8,near); for(let v=0;v<m.nv&&ci<0;v++) if(near[v]&&state.candOf[v]>=0) ci=state.candOf[v]; }
+  if(ci>=0) toggleCandidate(ci); else if(!grabAt(best)) status('Nothing bracket-like at that point. Use Mark in the toolbar to paint a free-form area.');
+});
+$('gl').addEventListener('pointercancel',()=>{ if(painting){ painting=false; controls.enabled=true; endStroke(); } });
+
+function applyBrush(v0,shift){
+  const mode=state.mode;
+  if(mode==='add'||mode==='erase') return paint(v0,+$('p-brush').value,mode==='add');
+  sculpt(v0,+$('p-brush').value,mode,shift);
+}
 function paint(v0,radius,add){
   const m=state.mesh; if(!state.manualAdd){ state.manualAdd=new Uint8Array(m.nv); state.manualErase=new Uint8Array(m.nv); }
   const seed=new Uint8Array(m.nv); seed[v0]=1; const region=new Uint8Array(m.nv);
@@ -1129,9 +1197,70 @@ function paint(v0,radius,add){
   for(let v=0;v<m.nv;v++) if(region[v]){ if(add){state.manualAdd[v]=1;state.manualErase[v]=0;} else {state.manualErase[v]=1;state.manualAdd[v]=0;} }
   applySelection();
 }
-function setMode(mode){ state.mode=mode; for(const k of ['orbit','add','erase']) $('m-'+k).classList.toggle('on',k===mode); controls.enableRotate=true; $('gl').style.cursor=mode==='orbit'?'pointer':'crosshair'; }
-$('btn-clearpaint').onclick=()=>{ state.manualAdd=null; state.manualErase=null; applySelection(); status('Painting cleared.'); };
-$('m-orbit').onclick=()=>setMode('orbit'); $('m-add').onclick=()=>setMode('add'); $('m-erase').onclick=()=>setMode('erase');
+
+/* ---- sculpting on the finished surface ---- */
+function beginStroke(){
+  if(!['cut','build','smooth','flatten'].includes(state.mode)) return;
+  if(state.mesh===state.original){ const m=state.mesh; state.mesh=Object.assign({},m,{pos:Float32Array.from(m.pos),vn:Float32Array.from(m.vn),fn:Float32Array.from(m.fn)}); showMesh(false); }
+  strokeBackup={pos:Float32Array.from(state.mesh.pos),touched:new Set()};
+}
+function endStroke(){
+  if(!strokeBackup) return;
+  if(strokeBackup.touched.size){ state.strokes.push(strokeBackup); if(state.strokes.length>30) state.strokes.shift(); $('btn-undo-stroke').disabled=false; finishSculpt(); }
+  strokeBackup=null;
+}
+/* one dab: a smooth falloff (1 at the centre, 0 at the rim) over the geodesic disc */
+function sculpt(v0,radius,mode,shift){
+  const m=state.mesh, {nv,pos,vn,adjStart,adj}=m; const strength=(+$('p-strength').value)/100;
+  const seed=new Uint8Array(nv); seed[v0]=1; const reg=new Uint8Array(nv); const dist=new Float32Array(nv).fill(Infinity);
+  growDistance(m,seed,()=>true,radius,reg,dist);
+  const idx=[]; for(let v=0;v<nv;v++) if(reg[v]) idx.push(v);
+  if(idx.length<3) return;
+  const w=new Float32Array(idx.length); for(let i=0;i<idx.length;i++){ const t=dist[idx[i]]/radius; w[i]=t>=1?0:(1-t*t)*(1-t*t); }
+  // area normal and local plane of the brush disc
+  let nx=0,ny=0,nz=0; for(let i=0;i<idx.length;i++){ const v=idx[i]; nx+=vn[3*v]*w[i];ny+=vn[3*v+1]*w[i];nz+=vn[3*v+2]*w[i]; } const nl=Math.hypot(nx,ny,nz)||1; nx/=nl;ny/=nl;nz/=nl;
+  if(mode==='cut'||mode==='build'){
+    const sign=(mode==='cut')!==!!shift?-1:1; const step=0.02*radius*strength*2;  // per dab, scaled by brush size
+    for(let i=0;i<idx.length;i++){ const v=idx[i]; const d=sign*step*w[i]; pos[3*v]+=d*nx;pos[3*v+1]+=d*ny;pos[3*v+2]+=d*nz; strokeBackup&&strokeBackup.touched.add(v); }
+  } else if(mode==='smooth'){
+    const lam=0.5*strength; const np=new Float32Array(idx.length*3);
+    for(let i=0;i<idx.length;i++){ const v=idx[i]; let sx=0,sy=0,sz=0,c=0; for(let k=adjStart[v];k<adjStart[v+1];k++){ const u=adj[k]; sx+=pos[3*u];sy+=pos[3*u+1];sz+=pos[3*u+2];c++; } if(!c){np[3*i]=pos[3*v];np[3*i+1]=pos[3*v+1];np[3*i+2]=pos[3*v+2];continue;}
+      // move toward the neighbour centroid, but only along the normal (keeps the triangulation from sliding)
+      const dx=sx/c-pos[3*v],dy=sy/c-pos[3*v+1],dz=sz/c-pos[3*v+2]; const d=dx*vn[3*v]+dy*vn[3*v+1]+dz*vn[3*v+2]; const f=lam*w[i];
+      np[3*i]=pos[3*v]+f*d*vn[3*v]; np[3*i+1]=pos[3*v+1]+f*d*vn[3*v+1]; np[3*i+2]=pos[3*v+2]+f*d*vn[3*v+2]; }
+    for(let i=0;i<idx.length;i++){ const v=idx[i]; pos[3*v]=np[3*i];pos[3*v+1]=np[3*i+1];pos[3*v+2]=np[3*i+2]; strokeBackup&&strokeBackup.touched.add(v); }
+  } else if(mode==='flatten'){
+    // plane through the disc's weighted centroid with the area normal; pull points toward it
+    let cx=0,cy=0,cz=0,sw=0; for(let i=0;i<idx.length;i++){ const v=idx[i]; cx+=pos[3*v]*w[i];cy+=pos[3*v+1]*w[i];cz+=pos[3*v+2]*w[i]; sw+=w[i]; } cx/=sw;cy/=sw;cz/=sw;
+    const f=0.35*strength;
+    for(let i=0;i<idx.length;i++){ const v=idx[i]; const h=(pos[3*v]-cx)*nx+(pos[3*v+1]-cy)*ny+(pos[3*v+2]-cz)*nz; const d=-h*f*w[i]; pos[3*v]+=d*nx;pos[3*v+1]+=d*ny;pos[3*v+2]+=d*nz; strokeBackup&&strokeBackup.touched.add(v); }
+  }
+  geom.getAttribute('position').needsUpdate=true;
+  // cheap live normals for the touched disc so shading follows the stroke
+  for(let i=0;i<idx.length;i++){ const v=idx[i]; let ax=0,ay=0,az=0; for(let k=m.vfStart[v];k<m.vfStart[v+1];k++){ const f=m.vf[k]; const a=m.tris[3*f],b=m.tris[3*f+1],c=m.tris[3*f+2]; const ux=pos[3*b]-pos[3*a],uy=pos[3*b+1]-pos[3*a+1],uz=pos[3*b+2]-pos[3*a+2],wx=pos[3*c]-pos[3*a],wy=pos[3*c+1]-pos[3*a+1],wz=pos[3*c+2]-pos[3*a+2]; ax+=uy*wz-uz*wy;ay+=uz*wx-ux*wz;az+=ux*wy-uy*wx; } const l=Math.hypot(ax,ay,az)||1; vn[3*v]=ax/l;vn[3*v+1]=ay/l;vn[3*v+2]=az/l; }
+  geom.getAttribute('normal').needsUpdate=true;
+}
+/* after a stroke: recompute face normals (export) and drop cached analysis, which no longer matches the surface */
+function finishSculpt(){
+  const m=state.mesh; const {nt,tris,pos,fn}=m;
+  for(let f=0;f<nt;f++){ const a=tris[3*f],b=tris[3*f+1],c=tris[3*f+2]; const ux=pos[3*b]-pos[3*a],uy=pos[3*b+1]-pos[3*a+1],uz=pos[3*b+2]-pos[3*a+2],wx=pos[3*c]-pos[3*a],wy=pos[3*c+1]-pos[3*a+1],wz=pos[3*c+2]-pos[3*a+2]; let nx=uy*wz-uz*wy,ny=uz*wx-ux*wz,nz=ux*wy-uy*wx; const l=Math.hypot(nx,ny,nz)||1; fn[3*f]=nx/l;fn[3*f+1]=ny/l;fn[3*f+2]=nz/l; }
+  state.features=null;
+}
+$('btn-undo-stroke').onclick=()=>{
+  const s=state.strokes.pop(); if(!s) return; const m=state.mesh; m.pos.set(s.pos);
+  const vn=vertexNormals(m.pos,m.tris,m.nv); m.vn.set(vn); geom.getAttribute('position').needsUpdate=true; geom.getAttribute('normal').needsUpdate=true; finishSculpt();
+  $('btn-undo-stroke').disabled=!state.strokes.length; status('Stroke undone.');
+};
+
+const MODE_HINT={orbit:'Select: click a part to include or exclude it; drag to orbit.',add:'Mark: paint points into the removal area. Drag to paint; right-drag to orbit.',erase:'Unmark: paint points out of the removal area.',cut:'Cut: lower the surface under the brush. Hold Shift to raise instead.',build:'Build: raise the surface under the brush. Hold Shift to lower instead.',smooth:'Smooth: even out a rough spot. Short strokes, repeat as needed.',flatten:'Flatten: level the area to its surroundings.'};
+function setMode(mode){
+  state.mode=mode; for(const k of ['orbit','add','erase','cut','build','smooth','flatten']) $('m-'+k).classList.toggle('on',k===mode);
+  const brush=BRUSH_MODES.includes(mode); $('gl').classList.toggle('brush',brush); $('gl').style.cursor=brush?'none':'pointer';
+  controls.mouseButtons={LEFT:brush?THREE.MOUSE.PAN:THREE.MOUSE.ROTATE,MIDDLE:THREE.MOUSE.DOLLY,RIGHT:THREE.MOUSE.ROTATE}; if(brush) controls.mouseButtons.LEFT=null;
+  if(cursorObj&&!brush) cursorObj.visible=false;
+  if(!busy) status(MODE_HINT[mode]);
+}
+for(const k of ['orbit','add','erase','cut','build','smooth','flatten']) $('m-'+k).onclick=()=>setMode(k);
 $('sel-auto').addEventListener('change',()=>{ if(state.cands) applySelection(); });
 for(const id of ['p-margin','p-crease']) $(id).addEventListener('input',()=>{ if(state.cands&&!busy) applySelection(); }); $('sel-manual').addEventListener('change',()=>{ if(state.cands) applySelection(); });
 
@@ -1148,7 +1277,7 @@ async function analyze(){
 }
 async function loadMesh(pos,tris,name){
   setBusy(true);
-  state.fileName=name; state.history=[]; state.isPatch=null; state.features=null; state.comps=0;
+  state.fileName=name; state.history=[]; state.strokes=[]; $('btn-undo-stroke').disabled=true; state.isPatch=null; state.features=null; state.comps=0;
   status('Building mesh',0.02); await tick();
   state.mesh=buildMesh(pos,tris); state.original=state.mesh; state.flag=new Uint8Array(state.mesh.nv);
   { let mn=[Infinity,Infinity,Infinity],mx=[-Infinity,-Infinity,-Infinity]; for(let v=0;v<state.mesh.nv;v++) for(let k=0;k<3;k++){ const x=pos[3*v+k]; if(x<mn[k])mn[k]=x; if(x>mx[k])mx[k]=x; } const diag=Math.hypot(mx[0]-mn[0],mx[1]-mn[1],mx[2]-mn[2]); if(diag>250||diag<15) status(`This scan spans ${diag.toFixed(0)} units across; the pipeline assumes millimetres, so results may be off if it was exported in other units.`,null,true); }
@@ -1206,12 +1335,12 @@ async function secondPass(){
   else { state.cands=[]; state.candOf=null; applySelection(); status(prev.replace(/ Export, or Run again.*$/,'')+' A second look found nothing left. Export when ready.'); }
 }
 $('btn-remove').onclick=async()=>{ if(!state.mesh||!state.flag||busy) return; setBusy(true); try{ const wasLeftover=state.cands&&state.cands.some(c=>c.leftover); await removeAndFill(); if(!wasLeftover) await secondPass(); }catch(e){ console.error(e); status('Removal failed: '+e.message,null,true);} setBusy(false); };
-$('btn-undo').onclick=()=>{ const h=state.history.pop(); if(!h) return; state.mesh=h.mesh; state.isPatch=h.isPatch; state.features=h.features; state.cands=h.cands||[]; state.candOf=h.candOf||null; state.manualAdd=null; state.manualErase=null; state.parts=null; showMesh(false); applySelection(); $('btn-undo').disabled=!state.history.length; status('Undone: the selection is back. Click parts to adjust, then Remove.'); };
-$('btn-reset').onclick=()=>{ if(!state.original) return; state.mesh=state.original; state.history=[]; state.isPatch=null; state.features=null; state.cands=[]; state.candOf=null; state.manualAdd=null; state.manualErase=null; state.parts=null; state.flag=new Uint8Array(state.mesh.nv); showMesh(false); applySelection(); $('btn-undo').disabled=true; $('s-holes').textContent='–'; $('s-patch').textContent='–'; $('s-comps').textContent='–'; $('s-flag').textContent='0'; status('Back to the original scan.'); runAuto(); };
+$('btn-undo').onclick=()=>{ const h=state.history.pop(); if(!h) return; state.strokes=[]; $('btn-undo-stroke').disabled=true; state.mesh=h.mesh; state.isPatch=h.isPatch; state.features=h.features; state.cands=h.cands||[]; state.candOf=h.candOf||null; state.manualAdd=null; state.manualErase=null; state.parts=null; showMesh(false); applySelection(); $('btn-undo').disabled=!state.history.length; status('Undone: the selection is back. Click parts to adjust, then Remove.'); };
+$('btn-reset').onclick=()=>{ if(!state.original) return; state.mesh=state.original; state.history=[]; state.strokes=[]; $('btn-undo-stroke').disabled=true; state.isPatch=null; state.features=null; state.cands=[]; state.candOf=null; state.manualAdd=null; state.manualErase=null; state.parts=null; state.flag=new Uint8Array(state.mesh.nv); showMesh(false); applySelection(); $('btn-undo').disabled=true; $('s-holes').textContent='–'; $('s-patch').textContent='–'; $('s-comps').textContent='–'; $('s-flag').textContent='0'; status('Back to the original scan.'); runAuto(); };
 $('v-fit').onclick=()=>fitView();
 $('v-pre').onclick=()=>showGhost(!state.showPre);
 $('v-flat').onclick=()=>{ state.flat=!state.flat; material.flatShading=state.flat; material.needsUpdate=true; $('v-flat').classList.toggle('on',state.flat); };
-for(const [id,out,fmt] of [['p-angle','o-angle',v=>v+'°'],['p-steep','o-steep',v=>v+'°'],['p-seed','o-seed',v=>(+v).toFixed(2)],['p-prot','o-prot',v=>(+v).toFixed(2)+' mm'],['p-margin','o-margin',v=>(+v).toFixed(2)+' mm'],['p-crease','o-crease',v=>(+v).toFixed(2)+' mm'],['p-min','o-min',v=>(+v).toFixed(1)+' mm'],['p-max','o-max',v=>(+v).toFixed(1)+' mm'],['p-brush','o-brush',v=>(+v).toFixed(1)+' mm'],['p-fill','o-fill',v=>(+v).toFixed(2)],['p-radius','o-radius',v=>(+v).toFixed(2)+' mm'],['p-diff','o-diff',v=>(+v).toFixed(2)+' mm'],['p-band','o-band',v=>(+v).toFixed(2)+' mm']]){
+for(const [id,out,fmt] of [['p-angle','o-angle',v=>v+'°'],['p-steep','o-steep',v=>v+'°'],['p-seed','o-seed',v=>(+v).toFixed(2)],['p-prot','o-prot',v=>(+v).toFixed(2)+' mm'],['p-margin','o-margin',v=>(+v).toFixed(2)+' mm'],['p-crease','o-crease',v=>(+v).toFixed(2)+' mm'],['p-min','o-min',v=>(+v).toFixed(1)+' mm'],['p-max','o-max',v=>(+v).toFixed(1)+' mm'],['p-brush','o-brush',v=>(+v).toFixed(1)+' mm'],['p-strength','o-strength',v=>v+'%'],['p-fill','o-fill',v=>(+v).toFixed(2)],['p-radius','o-radius',v=>(+v).toFixed(2)+' mm'],['p-diff','o-diff',v=>(+v).toFixed(2)+' mm'],['p-band','o-band',v=>(+v).toFixed(2)+' mm']]){
   $(id).addEventListener('input',()=>{ $(out).textContent=fmt($(id).value); });
 }
 
@@ -1256,7 +1385,7 @@ $('btn-export').onclick=async()=>{
 /* ------------------------------------------------------------------- boot */
 window.addEventListener('error',e=>{ status('Something went wrong: '+(e.message||e),null,true); setBusy(false); });
 window.addEventListener('unhandledrejection',e=>{ status('Something went wrong: '+(e.reason&&e.reason.message||e.reason),null,true); setBusy(false); });
-document.addEventListener('keydown',e=>{ if(e.key==='1') setMode('orbit'); if(e.key==='2') setMode('add'); if(e.key==='3') setMode('erase'); });
+document.addEventListener('keydown',e=>{ if(e.target&&/INPUT|TEXTAREA/.test(e.target.tagName)) return; const k={'1':'orbit','2':'add','3':'erase','4':'cut','5':'build','6':'smooth','7':'flatten'}[e.key]; if(k) setMode(k); if(e.key==='['){ $('p-brush').value=Math.max(0.3,+$('p-brush').value-0.2); $('p-brush').dispatchEvent(new Event('input')); } if(e.key===']'){ $('p-brush').value=Math.min(5,+$('p-brush').value+0.2); $('p-brush').dispatchEvent(new Event('input')); } if((e.ctrlKey||e.metaKey)&&e.key==='z'&&state.strokes.length){ e.preventDefault(); $('btn-undo-stroke').click(); } });
 if(window.THREE&&THREE.OrbitControls){ initThree(); $('btn-sample').click(); }
 else status('The 3D library did not load. Reload the page.',null,true);
 </script>
