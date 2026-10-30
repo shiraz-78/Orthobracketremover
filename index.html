@@ -60,7 +60,20 @@ input[type=range]{grid-column:1/-1;width:100%;accent-color:var(--accent);margin:
 .stats dt{color:var(--muted)}.stats dd{margin:0;font-family:var(--font-num);font-variant-numeric:tabular-nums}
 .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted)}
 .legend span::before{content:"";display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:-1px;background:var(--c)}
-.status{position:absolute;left:max(12px,env(safe-area-inset-left,0px));right:max(12px,env(safe-area-inset-right,0px));bottom:12px;pointer-events:none;display:flex;flex-direction:column;gap:6px}
+.navpad{position:absolute;right:max(12px,env(safe-area-inset-right,0px));bottom:12px;display:flex;gap:8px;align-items:flex-end}
+.nav-block{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:6px;box-shadow:0 2px 10px rgba(0,0,0,.08);display:flex;flex-direction:column;gap:4px;align-items:center}
+.nav-title{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600}
+.nav-grid{display:grid;grid-template-columns:repeat(3,26px);grid-auto-rows:26px;gap:2px}
+.nav-row{display:flex;gap:2px}
+.nav-views{display:grid;grid-template-columns:1fr 1fr;gap:2px}
+.navpad button{border:1px solid transparent;background:var(--bg);color:var(--fg);border-radius:5px;padding:0;width:26px;height:26px;font-size:12px;line-height:1;display:grid;place-items:center;user-select:none;touch-action:none}
+.navpad .nav-row button{width:40px}
+.nav-views button{width:auto;min-width:54px;height:24px;padding:0 8px;font-size:11.5px}
+.navpad button:hover{border-color:var(--accent)}
+.navpad button:active{background:var(--accent-soft)}
+.status{position:absolute;left:max(12px,env(safe-area-inset-left,0px));right:380px;bottom:12px;pointer-events:none;display:flex;flex-direction:column;gap:6px}
+@media (max-width:1000px){.status{right:12px;bottom:150px}}
+@media (max-width:760px){.navpad{gap:4px}.nav-block.views{display:none}.status{right:12px;bottom:118px}}
 @media (max-width:760px){.status{left:12px;right:12px}}
 .status .msg{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:6px 10px;font-size:12.5px;align-self:flex-start;max-width:100%;box-shadow:0 2px 10px rgba(0,0,0,.08)}
 .status .msg.err{border-color:var(--flag);color:var(--flag)}
@@ -70,6 +83,7 @@ input[type=range]{grid-column:1/-1;width:100%;accent-color:var(--accent);margin:
 .tgroup{display:flex;gap:2px;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:3px;pointer-events:auto;box-shadow:0 2px 10px rgba(0,0,0,.08);align-items:center}
 .tgroup button{border:0;background:transparent;padding:5px 9px;font-size:12.5px;display:inline-flex;align-items:center;gap:5px;border-radius:5px}
 .tgroup button svg{width:14px;height:14px;fill:currentColor}
+.tgroup button svg[viewBox] path[fill="none"]{fill:none}
 .tgroup button.on{background:var(--accent);color:var(--accent-ink)}
 .tgroup button.on svg [stroke="var(--panel)"]{stroke:var(--accent)}
 .tgroup button[disabled]{opacity:.4}
@@ -144,7 +158,6 @@ kbd{font-family:var(--font-num);font-size:11px;border:1px solid var(--line-stron
       <h2><i>3</i>Remove and rebuild</h2>
       <div class="row">
         <button class="primary" id="btn-remove" disabled>Remove brackets</button>
-        <button id="btn-undo" disabled>Undo removal</button>
         <button id="btn-reset">Start over</button>
       </div>
       <label class="check"><input type="checkbox" id="p-autoremove"> Remove automatically after detection, without waiting for me</label>
@@ -156,13 +169,12 @@ kbd{font-family:var(--font-num);font-size:11px;border:1px solid var(--line-stron
 
     <section class="step">
       <h2><i>4</i>Touch up</h2>
-      <p class="note">Sculpt directly on the result with the toolbar brushes: <b>Cut</b> takes down a leftover bump, <b>Build</b> raises a dip, <b>Smooth</b> evens out a rough spot, <b>Flatten</b> levels an area to its surroundings. Every stroke can be undone (<kbd>Ctrl</kbd>+<kbd>Z</kbd>). Keys <kbd>1</kbd>–<kbd>7</kbd> switch tools, <kbd>[</kbd> <kbd>]</kbd> resize the brush.</p>
+      <p class="note">Sculpt directly on the result with the toolbar brushes: <b>Cut</b> takes down a leftover bump, <b>Build</b> raises a dip, <b>Smooth</b> evens out a rough spot, <b>Flatten</b> levels an area to its surroundings. Everything can be undone and redone with the arrows in the toolbar (<kbd>Ctrl</kbd>+<kbd>Z</kbd>, <kbd>Ctrl</kbd>+<kbd>Y</kbd>). Keys <kbd>1</kbd>–<kbd>7</kbd> switch tools, <kbd>[</kbd> <kbd>]</kbd> resize the brush, arrows rotate (with <kbd>Shift</kbd>: move), <kbd>+</kbd> <kbd>−</kbd> zoom. The pad at the bottom right does the same with the mouse.</p>
       <div class="ctl">
         <label for="p-strength">Brush strength</label><output id="o-strength">50%</output>
         <input type="range" id="p-strength" min="5" max="100" step="5" value="50">
       </div>
       <div class="row">
-        <button id="btn-undo-stroke" disabled>Undo stroke</button>
         <button id="btn-auto" title="Run detection again on the current surface">Detect again</button>
       </div>
     </section>
@@ -262,10 +274,41 @@ kbd{font-family:var(--font-num);font-size:11px;border:1px solid var(--line-stron
       <div class="tgroup size" aria-label="Brush size">
         <label for="p-brush">Size</label><input type="range" id="p-brush" min="0.3" max="5" step="0.1" value="1.5"><output id="o-brush">1.5 mm</output>
       </div>
+      <div class="tgroup" aria-label="History">
+        <button id="h-undo" title="Undo (Ctrl+Z)" disabled><svg viewBox="0 0 16 16"><path d="M6 4L2 8l4 4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><path d="M2.5 8H10a3.5 3.5 0 010 7H8" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg><span>Undo</span></button>
+        <button id="h-redo" title="Redo (Ctrl+Y / Ctrl+Shift+Z)" disabled><svg viewBox="0 0 16 16"><path d="M10 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><path d="M13.5 8H6a3.5 3.5 0 000 7h2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg><span>Redo</span></button>
+      </div>
       <div class="tgroup view" aria-label="View">
         <button id="v-fit" title="Fit view">Fit</button>
         <button id="v-flat" title="Toggle flat shading">Flat</button>
         <button id="v-pre" title="Show the aligned pre scan as a translucent overlay" disabled>Pre</button>
+      </div>
+    </div>
+    <div class="navpad" aria-label="View navigation">
+      <div class="nav-block">
+        <div class="nav-title">Rotate</div>
+        <div class="nav-grid">
+          <span></span><button data-nav="rot-up" title="Tilt up (↑)">▲</button><span></span>
+          <button data-nav="rot-left" title="Turn left (←)">◀</button><button data-nav="rot-reset" title="Reset view">●</button><button data-nav="rot-right" title="Turn right (→)">▶</button>
+          <span></span><button data-nav="rot-down" title="Tilt down (↓)">▼</button><span></span>
+        </div>
+        <div class="nav-row"><button data-nav="roll-ccw" title="Roll counter-clockwise">⟲</button><button data-nav="roll-cw" title="Roll clockwise">⟳</button></div>
+      </div>
+      <div class="nav-block">
+        <div class="nav-title">Move</div>
+        <div class="nav-grid">
+          <span></span><button data-nav="pan-up" title="Move up (Shift+↑)">▲</button><span></span>
+          <button data-nav="pan-left" title="Move left (Shift+←)">◀</button><button data-nav="pan-center" title="Center the scan">⌖</button><button data-nav="pan-right" title="Move right (Shift+→)">▶</button>
+          <span></span><button data-nav="pan-down" title="Move down (Shift+↓)">▼</button><span></span>
+        </div>
+        <div class="nav-row"><button data-nav="zoom-in" title="Zoom in (+)">+</button><button data-nav="zoom-out" title="Zoom out (−)">−</button></div>
+      </div>
+      <div class="nav-block views">
+        <div class="nav-title">Views</div>
+        <div class="nav-views">
+          <button data-view="front">Front</button><button data-view="occlusal">Occlusal</button>
+          <button data-view="left">Left</button><button data-view="right">Right</button>
+        </div>
       </div>
     </div>
     <div class="status">
@@ -290,7 +333,7 @@ function status(text,pct,err){
   if(pct==null){barEl.hidden=true;} else {barEl.hidden=false; barI.style.width=(pct*100).toFixed(0)+'%';}
 }
 let busy=false;
-function setBusy(b){ busy=b; for(const id of ['btn-detect','btn-export','btn-sample','btn-auto']) $(id).disabled=b; $('btn-remove').disabled=b||!(state.flag&&state.flag.some(x=>x)); $('file').disabled=b; $('file-pre').disabled=b; $('btn-load').classList.toggle('busy',b); $('btn-load-pre').classList.toggle('busy',b); $('btn-match').disabled=b||!state.pre||!state.mesh; if(!b) $('btn-undo').disabled=state.history.length===0; }
+function setBusy(b){ busy=b; for(const id of ['btn-detect','btn-export','btn-sample','btn-auto']) $(id).disabled=b; $('btn-remove').disabled=b||!(state.flag&&state.flag.some(x=>x)); $('file').disabled=b; $('file-pre').disabled=b; $('btn-load').classList.toggle('busy',b); $('btn-load-pre').classList.toggle('busy',b); $('btn-match').disabled=b||!state.pre||!state.mesh; updateHistoryButtons(); }
 
 /* --------------------------------------------------------------- STL parse */
 function parseSTL(buffer){
@@ -465,7 +508,7 @@ function growDistance(m,seedFlag,passes,cap,outFlag,distOut){
   }
 }
 function archFrame(m){
-  const idx=sampleIdx(m.nv,6000); const p=pca(m.pos,idx); const up=cross(p.e0,p.e1); return {c:p.c,up};
+  const idx=sampleIdx(m.nv,6000); const p=pca(m.pos,idx); const up=cross(p.e0,p.e1); return {c:p.c,up,e0:p.e0};
 }
 /* facial test: the normal lies roughly in the occlusal plane and points away from the arch centre */
 function facialDot(frame,px,py,pz,nx,ny,nz){
@@ -533,6 +576,33 @@ async function detect(){
   else { F.cleanOffset=null; F.cleanOffsetC=null; }
   applySelection();
 }
+/* ---- one history for everything the user does: selection edits, paint and sculpt strokes, removals ----
+   Each entry stores a snapshot of what the action changed, taken BEFORE the action; undo swaps the current state
+   for it (keeping the current state for redo). */
+const HISTORY_MAX=40;
+function snapSelection(){ return {kind:'sel',cands:state.cands.map(c=>({ref:c,accepted:c.accepted,userSet:c.userSet,on:c.on})),extraCands:state.cands.length,candOf:state.candOf?Int32Array.from(state.candOf):null,manualAdd:state.manualAdd?Uint8Array.from(state.manualAdd):null,manualErase:state.manualErase?Uint8Array.from(state.manualErase):null,margin:$('p-margin').value}; }
+function applySnapSelection(sn){
+  // candidates added later (grabs) are dropped by truncating to the recorded length; flags on the survivors are restored
+  state.cands.length=Math.min(state.cands.length,sn.cands.length);
+  for(const r of sn.cands){ if(state.cands.includes(r.ref)){ r.ref.accepted=r.accepted; r.ref.userSet=r.userSet; } else state.cands.push(Object.assign(r.ref,{accepted:r.accepted,userSet:r.userSet})); }
+  state.candOf=sn.candOf?Int32Array.from(sn.candOf):null; state.manualAdd=sn.manualAdd?Uint8Array.from(sn.manualAdd):null; state.manualErase=sn.manualErase?Uint8Array.from(sn.manualErase):null;
+  if($('p-margin').value!==sn.margin){ $('p-margin').value=sn.margin; $('o-margin').textContent=(+sn.margin).toFixed(2)+' mm'; }
+  applySelection();
+}
+function snapSurface(){ return {kind:'surf',mesh:state.mesh,pos:Float32Array.from(state.mesh.pos)}; }
+function applySnapSurface(sn){ const m=state.mesh; if(m!==sn.mesh){ state.mesh=sn.mesh; showMesh(false); } state.mesh.pos.set(sn.pos); const vn=vertexNormals(state.mesh.pos,state.mesh.tris,state.mesh.nv); state.mesh.vn.set(vn); geom.getAttribute('position').needsUpdate=true; geom.getAttribute('normal').needsUpdate=true; finishSculpt(); }
+function snapMesh(){ return {kind:'mesh',mesh:state.mesh,pos:Float32Array.from(state.mesh.pos),isPatch:state.isPatch,features:state.features,sel:snapSelection(),holes:$('s-holes').textContent,patch:$('s-patch').textContent}; }
+function applySnapMesh(sn){ state.mesh=sn.mesh; state.mesh.pos.set(sn.pos); const vn=vertexNormals(state.mesh.pos,state.mesh.tris,state.mesh.nv); state.mesh.vn.set(vn); state.isPatch=sn.isPatch; state.features=sn.features; state.parts=null; state.partId=null; state.diff=null; showMesh(false); $('s-holes').textContent=sn.holes; $('s-patch').textContent=sn.patch; applySnapSelection(sn.sel); }
+function takeSnap(kind){ return kind==='sel'?snapSelection():kind==='surf'?snapSurface():snapMesh(); }
+function applySnap(sn){ if(sn.kind==='sel') applySnapSelection(sn); else if(sn.kind==='surf') applySnapSurface(sn); else applySnapMesh(sn); }
+/* call BEFORE changing state: records what is about to change */
+function recordAction(kind,label){ state.history.push({label,snap:takeSnap(kind)}); if(state.history.length>HISTORY_MAX) state.history.shift(); state.future.length=0; updateHistoryButtons(); }
+function undo(){ if(busy||!state.history.length) return; const h=state.history.pop(); const cur={label:h.label,snap:takeSnap(h.snap.kind)}; state.future.push(cur); applySnap(h.snap); updateHistoryButtons(); status('Undid '+h.label+'.'); }
+function redo(){ if(busy||!state.future.length) return; const f=state.future.pop(); const cur={label:f.label,snap:takeSnap(f.snap.kind)}; state.history.push(cur); applySnap(f.snap); updateHistoryButtons(); status('Redid '+f.label+'.'); }
+function clearHistory(){ state.history=[]; state.future=[]; updateHistoryButtons(); }
+function updateHistoryButtons(){ const u=$('h-undo'), r=$('h-redo'); u.disabled=!state.history.length||busy; r.disabled=!state.future.length||busy; u.title=state.history.length?`Undo ${state.history[state.history.length-1].label} (Ctrl+Z)`:'Nothing to undo'; r.title=state.future.length?`Redo ${state.future[state.future.length-1].label} (Ctrl+Y)`:'Nothing to redo'; }
+$('h-undo').onclick=undo; $('h-redo').onclick=redo;
+
 /* Turns the current candidate selection (plus hand painting) into the removal set. */
 /* Footprint ring: every same-facing point whose distance IN THE PLANE OF THE TOOTH SURFACE to the part's footprint is
    within r (the wings stand 1.5 mm proud, so distances along the surface or in 3D would never reach the base pad). */
@@ -583,6 +653,7 @@ function grabAt(v0){
   const verts=[]; let mn=[Infinity,Infinity,Infinity],mx=[-Infinity,-Infinity,-Infinity],cx=0,cy=0,cz=0,nx=0,ny=0,nz=0,offSum=0;
   for(let v=0;v<nv;v++){ if(!reg[v]) continue; verts.push(v); for(let k=0;k<3;k++){ const x=pos[3*v+k]; if(x<mn[k])mn[k]=x; if(x>mx[k])mx[k]=x; } cx+=pos[3*v];cy+=pos[3*v+1];cz+=pos[3*v+2]; nx+=vn[3*v];ny+=vn[3*v+1];nz+=vn[3*v+2]; offSum+=Math.max(0,offsetC[v]); }
   const n=verts.length; if(n<10) return false; const nl=Math.hypot(nx,ny,nz)||1;
+  recordAction('sel','grabbing a part');
   if(!state.candOf) state.candOf=new Int32Array(nv).fill(-1);
   const ci=state.cands.length;
   state.cands.push({verts,diam:Math.hypot(mx[0]-mn[0],mx[1]-mn[1],mx[2]-mn[2]),meanOff:offSum/n,maxOff:0,plateau:0,facial:0,center:[cx/n,cy/n,cz/n],normal:[nx/nl,ny/nl,nz/nl],reasons:['picked by hand'],userSet:true,accepted:true,preHeight:NaN,ok:false});
@@ -590,7 +661,7 @@ function grabAt(v0){
   applySelection(); status(`Grabbed a ${state.cands[ci].diam.toFixed(1)} mm part from the click. Click it again to drop it.`);
   return true;
 }
-function toggleCandidate(ci){ const c=state.cands[ci]; c.accepted=!(c.on); c.userSet=true; applySelection(); status(`${c.on?'Included':'Excluded'} candidate ${ci+1}${c.reasons.length?' ('+c.reasons.join(', ')+')':''}.`); }
+function toggleCandidate(ci){ const c=state.cands[ci]; recordAction('sel',c.on?'excluding a part':'including a part'); c.accepted=!(c.on); c.userSet=true; applySelection(); status(`${c.on?'Included':'Excluded'} candidate ${ci+1}${c.reasons.length?' ('+c.reasons.join(', ')+')':''}.`); }
 
 /* ----------------------------------------------------- remove + hole fill */
 function earClip(pts){
@@ -833,8 +904,8 @@ async function removeAndFill(){
   const ntris=new Uint32Array(outTris.length); for(let i=0;i<outTris.length;i++) ntris[i]=used[outTris[i]];
   // carry forward patch marks from earlier passes
   if(state.isPatch){ for(let v=0;v<nv;v++){ const l=used[v]; if(l>=0&&state.isPatch[v]) isPatch[l]=1; } }
-  state.history.push({mesh:m,isPatch:state.isPatch,features:state.features,cands:state.cands,candOf:state.candOf}); if(state.history.length>6) state.history.shift();
-  state.mesh=buildMesh(npos,ntris); state.strokes=[]; $('btn-undo-stroke').disabled=true; state.isPatch=isPatch; state.flag=new Uint8Array(nvNew); state.features=null; state.comps=0; state.parts=null; state.partId=null; state.cands=[]; state.candOf=null; state.manualAdd=null; state.manualErase=null; state.diff=null; $('btn-remove').disabled=true; $('btn-remove').textContent='Remove brackets'; $('s-comps').textContent='–';
+  recordAction('mesh','the removal');
+  state.mesh=buildMesh(npos,ntris); state.isPatch=isPatch; state.flag=new Uint8Array(nvNew); state.features=null; state.comps=0; state.parts=null; state.partId=null; state.cands=[]; state.candOf=null; state.manualAdd=null; state.manualErase=null; state.diff=null; $('btn-remove').disabled=true; $('btn-remove').textContent='Remove brackets'; $('s-comps').textContent='–';
   $('s-holes').textContent=filled; $('s-patch').textContent=patchTris.length.toLocaleString();
   $('s-comps').textContent='–'; $('s-flag').textContent='0';
   showMesh(false); if(state.mode==='add'||state.mode==='erase') setMode('orbit');
@@ -1070,7 +1141,7 @@ async function matchPre(){
 }
 
 /* --------------------------------------------------------------- three.js */
-const state={mesh:null,original:null,history:[],strokes:[],features:null,flag:null,isPatch:null,comps:0,mode:'orbit',flat:false,fileName:'synthetic sample',pre:null,preName:'none',global:null,parts:null,partId:null,diff:null,showPre:false,cands:[],candOf:null,manualAdd:null,manualErase:null};
+const state={mesh:null,original:null,history:[],future:[],features:null,flag:null,isPatch:null,comps:0,mode:'orbit',flat:false,fileName:'synthetic sample',pre:null,preName:'none',global:null,parts:null,partId:null,diff:null,showPre:false,cands:[],candOf:null,manualAdd:null,manualErase:null};
 let renderer,scene,camera,controls,meshObj=null,geom=null,material;
 const COL={base:[0.80,0.76,0.68],flag:[0.84,0.27,0.17],cand:[0.90,0.66,0.22],patch:[0.22,0.58,0.40]};
 function initThree(){
@@ -1129,7 +1200,7 @@ function updateColors(){
 }
 function fitView(){
   geom.computeBoundingSphere(); const bs=geom.boundingSphere; if(!bs) return;
-  controls.target.copy(bs.center);
+  camera.up.set(0,0,1); controls.target.copy(bs.center);
   const dist=bs.radius/Math.sin(camera.fov*Math.PI/360)*1.15;
   camera.position.copy(bs.center).add(new THREE.Vector3(0,-dist,dist*0.35)); camera.near=dist*0.01; camera.far=dist*20; camera.updateProjectionMatrix(); controls.update();
 }
@@ -1200,13 +1271,15 @@ function paint(v0,radius,add){
 
 /* ---- sculpting on the finished surface ---- */
 function beginStroke(){
+  if(state.mode==='add'||state.mode==='erase'){ recordAction('sel',state.mode==='add'?'a Mark stroke':'an Unmark stroke'); return; }
   if(!['cut','build','smooth','flatten'].includes(state.mode)) return;
   if(state.mesh===state.original){ const m=state.mesh; state.mesh=Object.assign({},m,{pos:Float32Array.from(m.pos),vn:Float32Array.from(m.vn),fn:Float32Array.from(m.fn)}); showMesh(false); }
-  strokeBackup={pos:Float32Array.from(state.mesh.pos),touched:new Set()};
+  recordAction('surf','a '+state.mode[0].toUpperCase()+state.mode.slice(1)+' stroke');
+  strokeBackup={touched:new Set()};
 }
 function endStroke(){
   if(!strokeBackup) return;
-  if(strokeBackup.touched.size){ state.strokes.push(strokeBackup); if(state.strokes.length>30) state.strokes.shift(); $('btn-undo-stroke').disabled=false; finishSculpt(); }
+  if(strokeBackup.touched.size) finishSculpt(); else if(state.history.length&&state.history[state.history.length-1].snap.kind==='surf'){ state.history.pop(); updateHistoryButtons(); } // an empty stroke leaves no history
   strokeBackup=null;
 }
 /* one dab: a smooth falloff (1 at the centre, 0 at the rim) over the geodesic disc */
@@ -1246,11 +1319,7 @@ function finishSculpt(){
   for(let f=0;f<nt;f++){ const a=tris[3*f],b=tris[3*f+1],c=tris[3*f+2]; const ux=pos[3*b]-pos[3*a],uy=pos[3*b+1]-pos[3*a+1],uz=pos[3*b+2]-pos[3*a+2],wx=pos[3*c]-pos[3*a],wy=pos[3*c+1]-pos[3*a+1],wz=pos[3*c+2]-pos[3*a+2]; let nx=uy*wz-uz*wy,ny=uz*wx-ux*wz,nz=ux*wy-uy*wx; const l=Math.hypot(nx,ny,nz)||1; fn[3*f]=nx/l;fn[3*f+1]=ny/l;fn[3*f+2]=nz/l; }
   state.features=null;
 }
-$('btn-undo-stroke').onclick=()=>{
-  const s=state.strokes.pop(); if(!s) return; const m=state.mesh; m.pos.set(s.pos);
-  const vn=vertexNormals(m.pos,m.tris,m.nv); m.vn.set(vn); geom.getAttribute('position').needsUpdate=true; geom.getAttribute('normal').needsUpdate=true; finishSculpt();
-  $('btn-undo-stroke').disabled=!state.strokes.length; status('Stroke undone.');
-};
+
 
 const MODE_HINT={orbit:'Select: click a part to include or exclude it; drag to orbit.',add:'Mark: paint points into the removal area. Drag to paint; right-drag to orbit.',erase:'Unmark: paint points out of the removal area.',cut:'Cut: lower the surface under the brush. Hold Shift to raise instead.',build:'Build: raise the surface under the brush. Hold Shift to lower instead.',smooth:'Smooth: even out a rough spot. Short strokes, repeat as needed.',flatten:'Flatten: level the area to its surroundings.'};
 function setMode(mode){
@@ -1262,6 +1331,9 @@ function setMode(mode){
 }
 for(const k of ['orbit','add','erase','cut','build','smooth','flatten']) $('m-'+k).onclick=()=>setMode(k);
 $('sel-auto').addEventListener('change',()=>{ if(state.cands) applySelection(); });
+let marginSnap=null;
+$('p-margin').addEventListener('pointerdown',()=>{ marginSnap=snapSelection(); });
+$('p-margin').addEventListener('change',()=>{ if(marginSnap&&marginSnap.margin!==$('p-margin').value){ state.history.push({label:'changing the ring',snap:marginSnap}); if(state.history.length>HISTORY_MAX) state.history.shift(); state.future.length=0; updateHistoryButtons(); } marginSnap=null; });
 for(const id of ['p-margin','p-crease']) $(id).addEventListener('input',()=>{ if(state.cands&&!busy) applySelection(); }); $('sel-manual').addEventListener('change',()=>{ if(state.cands) applySelection(); });
 
 /* --------------------------------------------------------------- pipeline */
@@ -1277,7 +1349,7 @@ async function analyze(){
 }
 async function loadMesh(pos,tris,name){
   setBusy(true);
-  state.fileName=name; state.history=[]; state.strokes=[]; $('btn-undo-stroke').disabled=true; state.isPatch=null; state.features=null; state.comps=0;
+  state.fileName=name; clearHistory(); state.isPatch=null; state.features=null; state.comps=0;
   status('Building mesh',0.02); await tick();
   state.mesh=buildMesh(pos,tris); state.original=state.mesh; state.flag=new Uint8Array(state.mesh.nv);
   { let mn=[Infinity,Infinity,Infinity],mx=[-Infinity,-Infinity,-Infinity]; for(let v=0;v<state.mesh.nv;v++) for(let k=0;k<3;k++){ const x=pos[3*v+k]; if(x<mn[k])mn[k]=x; if(x>mx[k])mx[k]=x; } const diag=Math.hypot(mx[0]-mn[0],mx[1]-mn[1],mx[2]-mn[2]); if(diag>250||diag<15) status(`This scan spans ${diag.toFixed(0)} units across; the pipeline assumes millimetres, so results may be off if it was exported in other units.`,null,true); }
@@ -1304,7 +1376,9 @@ async function runAuto(){
 $('file').addEventListener('change',async e=>{
   const f=e.target.files[0]; if(!f) return; e.target.value='';
   setBusy(true); status('Reading '+f.name,0.01); await tick();
-  try{ const buf=await f.arrayBuffer(); const raw=parseSTL(buf); if(raw.length<9) throw new Error('no triangles found'); status('Welding vertices',0.02); await tick(); const w=weld(raw); await loadMesh(w.pos,w.tris,f.name); await runAuto(); }
+  try{ const buf=await f.arrayBuffer(); const raw=parseSTL(buf); if(raw.length<9) throw new Error('no triangles found'); status('Welding vertices',0.02); await tick(); const w=weld(raw);
+    if(state.pre&&state.preName==='synthetic pre-ortho'){ state.pre=null; state.preName='none'; state.global=null; showGhost(false); $('v-pre').disabled=true; $('s-pre').textContent='none'; }
+    await loadMesh(w.pos,w.tris,f.name); await runAuto(); }
   catch(err){ console.error(err); status('Could not read that STL: '+err.message,null,true); setBusy(false); }
 });
 async function loadPre(pos,tris,name){
@@ -1323,7 +1397,7 @@ $('btn-sample').onclick=async()=>{ const s=makeSample(); const q=makeSample(true
 $('btn-auto').onclick=()=>runAuto();
 $('btn-match').onclick=async()=>{ if(busy) return; setBusy(true); try{ await matchPre(); }catch(e){ console.error(e); status('Matching failed: '+e.message,null,true);} setBusy(false); };
 $('btn-detect').onclick=async()=>{ if(!state.mesh) return; setBusy(true); try{ if(!state.features) await analyze(); await detect(); }catch(e){ console.error(e); status('Detection failed: '+e.message,null,true);} setBusy(false); };
-$('btn-clear').onclick=()=>{ if(!state.mesh) return; state.cands=[]; state.candOf=null; state.manualAdd=null; state.manualErase=null; applySelection(); status('Selection cleared.'); };
+$('btn-clear').onclick=()=>{ if(!state.mesh) return; recordAction('sel','clearing the selection'); state.cands=[]; state.candOf=null; state.manualAdd=null; state.manualErase=null; applySelection(); status('Selection cleared.'); };
 /* After a removal: look once more at the result for small raised leftovers beside the rebuilt areas (hook bases, wing tips, cement blobs). */
 async function secondPass(){
   if(!state.mesh||!state.isPatch) return;
@@ -1335,9 +1409,61 @@ async function secondPass(){
   else { state.cands=[]; state.candOf=null; applySelection(); status(prev.replace(/ Export, or Run again.*$/,'')+' A second look found nothing left. Export when ready.'); }
 }
 $('btn-remove').onclick=async()=>{ if(!state.mesh||!state.flag||busy) return; setBusy(true); try{ const wasLeftover=state.cands&&state.cands.some(c=>c.leftover); await removeAndFill(); if(!wasLeftover) await secondPass(); }catch(e){ console.error(e); status('Removal failed: '+e.message,null,true);} setBusy(false); };
-$('btn-undo').onclick=()=>{ const h=state.history.pop(); if(!h) return; state.strokes=[]; $('btn-undo-stroke').disabled=true; state.mesh=h.mesh; state.isPatch=h.isPatch; state.features=h.features; state.cands=h.cands||[]; state.candOf=h.candOf||null; state.manualAdd=null; state.manualErase=null; state.parts=null; showMesh(false); applySelection(); $('btn-undo').disabled=!state.history.length; status('Undone: the selection is back. Click parts to adjust, then Remove.'); };
-$('btn-reset').onclick=()=>{ if(!state.original) return; state.mesh=state.original; state.history=[]; state.strokes=[]; $('btn-undo-stroke').disabled=true; state.isPatch=null; state.features=null; state.cands=[]; state.candOf=null; state.manualAdd=null; state.manualErase=null; state.parts=null; state.flag=new Uint8Array(state.mesh.nv); showMesh(false); applySelection(); $('btn-undo').disabled=true; $('s-holes').textContent='–'; $('s-patch').textContent='–'; $('s-comps').textContent='–'; $('s-flag').textContent='0'; status('Back to the original scan.'); runAuto(); };
+$('btn-reset').onclick=()=>{ if(!state.original) return; state.mesh=state.original; clearHistory(); state.isPatch=null; state.features=null; state.cands=[]; state.candOf=null; state.manualAdd=null; state.manualErase=null; state.parts=null; state.flag=new Uint8Array(state.mesh.nv); showMesh(false); applySelection(); $('s-holes').textContent='–'; $('s-patch').textContent='–'; $('s-comps').textContent='–'; $('s-flag').textContent='0'; status('Back to the original scan.'); runAuto(); };
 $('v-fit').onclick=()=>fitView();
+/* ---- navigation pad: rotate / pan / zoom in small steps, held buttons repeat; preset views from the arch frame ---- */
+const _sph=new THREE.Spherical(), _off=new THREE.Vector3();
+function nav(action,amount){
+  if(!meshObj) return; amount=amount||1;
+  const ROT=0.12*amount, ZOOM=1.12;
+  _off.copy(camera.position).sub(controls.target);
+  if(action.startsWith('rot-')||action.startsWith('roll-')){
+    if(action==='rot-reset') return fitView();
+    const q=new THREE.Quaternion(); const right=new THREE.Vector3(), upv=new THREE.Vector3();
+    camera.matrix.extractBasis(right,upv,new THREE.Vector3());
+    if(action==='rot-left') q.setFromAxisAngle(camera.up,ROT); if(action==='rot-right') q.setFromAxisAngle(camera.up,-ROT);
+    if(action==='rot-up') q.setFromAxisAngle(right,-ROT); if(action==='rot-down') q.setFromAxisAngle(right,ROT);
+    if(action.startsWith('roll-')){ const dir=_off.clone().normalize(); camera.up.applyAxisAngle(dir,(action==='roll-cw'?-1:1)*ROT).normalize(); camera.lookAt(controls.target); controls.update(); return; }
+    _off.applyQuaternion(q); camera.position.copy(controls.target).add(_off);
+    if(action==='rot-up'||action==='rot-down') camera.up.applyQuaternion(q).normalize();
+    camera.lookAt(controls.target); controls.update(); return;
+  }
+  if(action.startsWith('pan-')){
+    if(action==='pan-center'){ geom.computeBoundingSphere(); controls.target.copy(geom.boundingSphere.center); camera.lookAt(controls.target); controls.update(); return; }
+    const dist=_off.length(); const step=dist*0.06*amount; const right=new THREE.Vector3(), up=new THREE.Vector3();
+    camera.matrix.extractBasis(right,up,new THREE.Vector3());
+    const d=new THREE.Vector3(); if(action==='pan-left') d.copy(right).multiplyScalar(step); if(action==='pan-right') d.copy(right).multiplyScalar(-step); if(action==='pan-up') d.copy(up).multiplyScalar(-step); if(action==='pan-down') d.copy(up).multiplyScalar(step);
+    camera.position.add(d); controls.target.add(d); controls.update(); return;
+  }
+  if(action==='zoom-in'||action==='zoom-out'){ const f=action==='zoom-in'?1/ZOOM:ZOOM; _off.multiplyScalar(Math.pow(f,amount)); camera.position.copy(controls.target).add(_off); controls.update(); }
+}
+function presetView(which){
+  if(!meshObj) return; const F=state.features&&state.features.frame?state.features.frame:archFrame(state.mesh);
+  geom.computeBoundingSphere(); const bs=geom.boundingSphere; const c=bs.center; const dist=bs.radius/Math.sin(camera.fov*Math.PI/360)*1.15;
+  const up=new THREE.Vector3(...F.up); const e0=new THREE.Vector3(...F.e0||[1,0,0]);
+  // the arch's long axis (e0) runs left-right. Anterior is the side where the arch comes to a point: among the
+  // points farthest along each candidate direction, the anterior ones are gathered near the midline
+  let ant=new THREE.Vector3().crossVectors(up,e0).normalize();
+  { const p=state.mesh.pos; const ds=[]; for(let v=0;v<state.mesh.nv;v+=20){ const dx=p[3*v]-c.x,dy=p[3*v+1]-c.y,dz=p[3*v+2]-c.z; ds.push([dx*ant.x+dy*ant.y+dz*ant.z, Math.abs(dx*e0.x+dy*e0.y+dz*e0.z)]); }
+    ds.sort((a,b)=>a[0]-b[0]); const k=Math.max(10,Math.floor(ds.length*0.05)); const lat=arr=>arr.reduce((s,x)=>s+x[1],0)/arr.length;
+    if(lat(ds.slice(-k))>lat(ds.slice(0,k))) ant.negate(); }
+  // the scan's open rim (palate cut, vestibular trim) lies on the apical side; occlusal is the opposite way
+  let occl=up.clone(); { const m=state.mesh; const isB=(state.features&&state.features.isB)||computeDihedral(m).isB; let sum=0,n=0; const p=m.pos; for(let v=0;v<m.nv;v++){ if(!isB[v]) continue; const dx=p[3*v]-c.x,dy=p[3*v+1]-c.y,dz=p[3*v+2]-c.z; sum+=dx*occl.x+dy*occl.y+dz*occl.z; n++; } if(n&&sum>0) occl.negate(); }
+  const left=new THREE.Vector3().crossVectors(occl,ant).normalize();
+  let dir, camUp;
+  if(which==='front'){ dir=ant.clone(); camUp=occl.clone().negate(); }
+  else if(which==='occlusal'){ dir=occl.clone(); camUp=ant.clone(); }
+  else if(which==='left'){ dir=left.clone(); camUp=occl.clone().negate(); }
+  else { dir=left.clone().negate(); camUp=occl.clone().negate(); }
+  controls.target.copy(c); camera.up.copy(camUp); camera.position.copy(c).addScaledVector(dir,dist); camera.lookAt(c); camera.near=dist*0.01; camera.far=dist*20; camera.updateProjectionMatrix(); controls.update();
+}
+for(const b of document.querySelectorAll('.navpad [data-nav]')){
+  let timer=null, rep=null; const act=()=>nav(b.dataset.nav);
+  const stop=()=>{ clearTimeout(timer); clearInterval(rep); timer=rep=null; };
+  b.addEventListener('pointerdown',e=>{ e.preventDefault(); act(); timer=setTimeout(()=>{ rep=setInterval(act,70); },350); });
+  for(const ev of ['pointerup','pointerleave','pointercancel']) b.addEventListener(ev,stop);
+}
+for(const b of document.querySelectorAll('.navpad [data-view]')) b.onclick=()=>presetView(b.dataset.view);
 $('v-pre').onclick=()=>showGhost(!state.showPre);
 $('v-flat').onclick=()=>{ state.flat=!state.flat; material.flatShading=state.flat; material.needsUpdate=true; $('v-flat').classList.toggle('on',state.flat); };
 for(const [id,out,fmt] of [['p-angle','o-angle',v=>v+'°'],['p-steep','o-steep',v=>v+'°'],['p-seed','o-seed',v=>(+v).toFixed(2)],['p-prot','o-prot',v=>(+v).toFixed(2)+' mm'],['p-margin','o-margin',v=>(+v).toFixed(2)+' mm'],['p-crease','o-crease',v=>(+v).toFixed(2)+' mm'],['p-min','o-min',v=>(+v).toFixed(1)+' mm'],['p-max','o-max',v=>(+v).toFixed(1)+' mm'],['p-brush','o-brush',v=>(+v).toFixed(1)+' mm'],['p-strength','o-strength',v=>v+'%'],['p-fill','o-fill',v=>(+v).toFixed(2)],['p-radius','o-radius',v=>(+v).toFixed(2)+' mm'],['p-diff','o-diff',v=>(+v).toFixed(2)+' mm'],['p-band','o-band',v=>(+v).toFixed(2)+' mm']]){
@@ -1385,7 +1511,8 @@ $('btn-export').onclick=async()=>{
 /* ------------------------------------------------------------------- boot */
 window.addEventListener('error',e=>{ status('Something went wrong: '+(e.message||e),null,true); setBusy(false); });
 window.addEventListener('unhandledrejection',e=>{ status('Something went wrong: '+(e.reason&&e.reason.message||e.reason),null,true); setBusy(false); });
-document.addEventListener('keydown',e=>{ if(e.target&&/INPUT|TEXTAREA/.test(e.target.tagName)) return; const k={'1':'orbit','2':'add','3':'erase','4':'cut','5':'build','6':'smooth','7':'flatten'}[e.key]; if(k) setMode(k); if(e.key==='['){ $('p-brush').value=Math.max(0.3,+$('p-brush').value-0.2); $('p-brush').dispatchEvent(new Event('input')); } if(e.key===']'){ $('p-brush').value=Math.min(5,+$('p-brush').value+0.2); $('p-brush').dispatchEvent(new Event('input')); } if((e.ctrlKey||e.metaKey)&&e.key==='z'&&state.strokes.length){ e.preventDefault(); $('btn-undo-stroke').click(); } });
+document.addEventListener('keydown',e=>{ if(e.target&&/INPUT|TEXTAREA/.test(e.target.tagName)) return; const k={'1':'orbit','2':'add','3':'erase','4':'cut','5':'build','6':'smooth','7':'flatten'}[e.key]; if(k) setMode(k);
+  const arrow={ArrowUp:'up',ArrowDown:'down',ArrowLeft:'left',ArrowRight:'right'}[e.key]; if(arrow){ e.preventDefault(); nav((e.shiftKey?'pan-':'rot-')+arrow); } if(e.key==='+'||e.key==='='){ nav('zoom-in'); } if(e.key==='-'||e.key==='_'){ nav('zoom-out'); } if(e.key==='['){ $('p-brush').value=Math.max(0.3,+$('p-brush').value-0.2); $('p-brush').dispatchEvent(new Event('input')); } if(e.key===']'){ $('p-brush').value=Math.min(5,+$('p-brush').value+0.2); $('p-brush').dispatchEvent(new Event('input')); } if((e.ctrlKey||e.metaKey)&&!e.shiftKey&&e.key.toLowerCase()==='z'){ e.preventDefault(); undo(); } if((e.ctrlKey||e.metaKey)&&(e.key.toLowerCase()==='y'||(e.shiftKey&&e.key.toLowerCase()==='z'))){ e.preventDefault(); redo(); } });
 if(window.THREE&&THREE.OrbitControls){ initThree(); $('btn-sample').click(); }
 else status('The 3D library did not load. Reload the page.',null,true);
 </script>
