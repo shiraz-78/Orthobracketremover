@@ -674,6 +674,39 @@ function footprintRing(m,cand,r){
     if(hit) out[v]=1; }
   return out;
 }
+/* Cement flash usually ends in a small step: a convex lip, then a concave foot where it meets the enamel a few tenths
+   of a millimetre further out. Where the removal stops on such a lip, take the strip up to the foot so the rebuild meets
+   enamel instead of the top of the cement. (A natural cusp ridge is convex with no foot right behind it.) */
+function cementStep(m,dil){
+  const F=state.features; if(!F||!F.valley) return; const V=F.valley, {nv,adjStart,adj}=m; const LIP=-0.05, FOOT=0.10, REACH=0.6;
+  for(let pass=0;pass<2;pass++){
+    const lip=new Uint8Array(nv); let nl=0;
+    for(let v=0;v<nv;v++){ if(!dil[v]||V[v]>LIP) continue; for(let i=adjStart[v];i<adjStart[v+1];i++) if(!dil[adj[i]]){ lip[v]=1; nl++; break; } }
+    if(!nl) return;
+    // from lip rim vertices outward over non-foot surface; the feet reached mark where the cement ends
+    const dR=new Float32Array(nv).fill(Infinity), G=new Uint8Array(nv); growDistance(m,lip,u=>!dil[u]&&V[u]<FOOT,REACH,G,dR);
+    const foot=new Uint8Array(nv); let nf=0; for(let v=0;v<nv;v++){ if(!G[v]||lip[v]) continue; for(let i=adjStart[v];i<adjStart[v+1];i++){ const u=adj[i]; if(!dil[u]&&V[u]>=FOOT){ foot[u]=1; nf++; } } }
+    if(!nf) return;
+    const dF=new Float32Array(nv).fill(Infinity), H=new Uint8Array(nv); growDistance(m,foot,u=>G[u]||foot[u],REACH,H,dF);
+    // the strip between lip and foot: on a short path from one to the other
+    let added=0; for(let v=0;v<nv;v++){ if(G[v]&&!lip[v]&&!dil[v]&&dR[v]+dF[v]<=REACH+0.15){ dil[v]=1; added++; } }
+    if(!added) return;
+  }
+}
+/* A rim left lying in a groove (the foot of the cement, a scratch along the bracket base) gives the rebuild a crease
+   where it meets the tooth. Take such grooves and a little beyond them, up to 0.7 mm past the ring; the gum line is
+   never taken. */
+function grooveRim(m,dil){
+  const F=state.features; if(!F||!F.valley) return; const V=F.valley, off=F.cleanOffset||F.offset, {nv,adjStart,adj}=m; const gum=gumLineFn();
+  const base=Uint8Array.from(dil); const dB=new Float32Array(nv).fill(Infinity), reach=new Uint8Array(nv); growDistance(m,base,()=>true,0.7,reach,dB);
+  for(let it=0;it<3;it++){
+    const seeds=new Uint8Array(nv); let ns=0;
+    for(let v=0;v<nv;v++){ if(dil[v]||!reach[v]||V[v]<=0.08||gum(v)) continue; for(let i=adjStart[v];i<adjStart[v+1];i++) if(dil[adj[i]]){ seeds[v]=1; ns++; break; } }
+    if(!ns) return;
+    const add=new Uint8Array(nv); growDistance(m,seeds,u=>!dil[u]&&reach[u]&&!gum(u),0.25,add);
+    for(let v=0;v<nv;v++) if(add[v]) dil[v]=1;
+  }
+}
 /* Concave creases (gingival sulcus, interproximal embrasures) sit below the reference surface; brackets and cement never cross them. */
 /* gum line: a 1 mm-scale valley that is not part of something raised (a bracket's own base corner is raised) */
 const GUM_VALLEY=0.10;
@@ -691,8 +724,16 @@ function applySelection(){
       const ring=footprintRing(m,c,Math.min(margin,1.0)); const near=footprintRing(m,c,0.25); const gum=gumLineFn();
       const core=new Uint8Array(nv); for(const v of c.verts){ core[v]=1; ring[v]=1; near[v]=1; }
       dil=new Uint8Array(nv); growDistance(m,core,u=>ring[u]&&(near[u]||!gum(u)),1e9,dil);
-      if(margin>1.0) growDistance(m,Uint8Array.from(dil),u=>onCrown(u)&&!gum(u),margin-1.0,dil); }
+      if(margin>1.0) growDistance(m,Uint8Array.from(dil),u=>onCrown(u)&&!gum(u),margin-1.0,dil);
+      if(margin>0){ cementStep(m,dil); grooveRim(m,dil); } }
     for(let v=0;v<nv;v++) if(dil[v]){ base[v]=1; partId[v]=ci; } }
+  // small islands of original surface enclosed by the removal area would leave specks inside the rebuild
+  { const comp=new Int32Array(nv).fill(-1); const sizes=[]; const touchB=[]; const isB=state.features?state.features.isB:null;
+    for(let v0=0;v0<nv;v0++){ if(base[v0]||comp[v0]>=0) continue; const id=sizes.length; let n=0, tb=false; const st=[v0]; comp[v0]=id;
+      while(st.length){ const v=st.pop(); n++; if(isB&&isB[v]) tb=true; for(let i=adjStart[v];i<adjStart[v+1];i++){ const u=adj[i]; if(!base[u]&&comp[u]<0){ comp[u]=id; st.push(u); } } }
+      sizes.push(n); touchB.push(tb); }
+    let big=0; for(let i=1;i<sizes.length;i++) if(sizes[i]>sizes[big]) big=i;
+    for(let v=0;v<nv;v++){ const c=comp[v]; if(c>=0&&c!==big&&!touchB[c]&&sizes[c]<400) base[v]=1; } }
   if(state.manualAdd) for(let v=0;v<nv;v++) if(state.manualAdd[v]) base[v]=1;
   if(state.manualErase) for(let v=0;v<nv;v++) if(state.manualErase[v]) base[v]=0;
   state.flag=base; state.partId=partId; state.parts=cands;
@@ -997,7 +1038,13 @@ async function removeAndFill(){
       for(let l=0;l<nI;l++) X[3*l+o]=y[l];
     }
     // blend toward the membrane solution: pure biharmonic over-bulges on doubly convex crowns
-    const kappa=+$('p-fill').value; for(let l=0;l<3*nI;l++) X[l]=XH[l]+kappa*(X[l]-XH[l]);
+    // blend toward the membrane solution in the interior only: pure biharmonic over-bulges on doubly convex crowns, but
+    // near the rim it is what keeps the slope continuous (the membrane alone leaves a crest where patch meets enamel)
+    const kappa=+$('p-fill').value;
+    { const dR=new Float64Array(nIB).fill(Infinity); const qq=[]; for(let l=nI;l<nIB;l++){ dR[l]=0; qq.push(l); }
+      for(let h=0;h<qq.length;h++){ const a=qq[h]; const nb_=nbrs[a]; for(let i=0;i<nb_.length;i++){ const b=nb_[i]; if(b>=nI) continue; const nd=dR[a]+Math.hypot(X[3*a]-X[3*b],X[3*a+1]-X[3*b+1],X[3*a+2]-X[3*b+2]); if(nd<dR[b]){ dR[b]=nd; qq.push(b); } } }
+      const RIM=+(globalThis.FILL_RIM_MM||0.9);
+      for(let l=0;l<nI;l++){ const t=Math.min(1,dR[l]/RIM), sm=t*t*(3-2*t); const k=1-(1-kappa)*sm; for(let o=0;o<3;o++) X[3*l+o]=XH[3*l+o]+k*(X[3*l+o]-XH[3*l+o]); } }
     if(part){ // snap the patch onto the fitted pre-treatment anatomy where the rim agrees with it
       const pre=state.pre, thr=+$('p-diff').value; let hit=0;
       // rim trust: 1 where the post rim already sits on the pre surface, 0 where the pre surface is elsewhere (moved gingiva, neighbour tooth)
