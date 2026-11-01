@@ -195,11 +195,12 @@ canvas#lasso{position:absolute;inset:0;width:100%;height:100%;pointer-events:non
 
     <section class="step" id="step2">
       <h2><i>2</i>Check brackets <span class="state" id="st2"></span></h2>
-      <p class="note"><b style="color:var(--flag)">Red</b> will be removed; <b style="color:var(--warn)">amber</b> was seen and rejected. Click a part to flip it, or use Mark, Unmark and Lasso on the left of the view.</p>
+      <p class="note"><b style="color:var(--flag)">Red</b> will be removed, nothing else. Click a red part to drop it, click a missed bracket to grab it, or use Mark, Unmark and Lasso on the left of the view.</p>
       <div class="seg" role="radiogroup" aria-label="Selection">
         <label><input type="radio" name="sel" id="sel-auto" checked> Pick brackets for me</label>
         <label><input type="radio" name="sel" id="sel-manual"> I will click each bracket</label>
       </div>
+      <label class="check"><input type="checkbox" id="show-rejected"> Show parts that were considered and rejected (amber)</label>
       <div class="ctl">
         <label for="p-margin">Ring around each bracket</label><output id="o-margin">0.80 mm</output>
         <input type="range" id="p-margin" min="0" max="3" step="0.1" value="0.8">
@@ -298,7 +299,7 @@ canvas#lasso{position:absolute;inset:0;width:100%;height:100%;pointer-events:non
 
     <div class="legend">
       <span style="--c:#d2452c">Will be removed</span>
-      <span style="--c:#e6a838">Rejected</span>
+      <span style="--c:#e6a838">Rejected (if shown)</span>
       <span style="--c:#2e8b5e">Rebuilt</span>
       <span style="--c:#4a7fd4">Pre scan</span>
     </div>
@@ -618,7 +619,8 @@ async function detect(){
       // a remnant is original surface beside a patch; something that is mostly rebuilt surface is the patch's own shape
       if(nearPatch>=3&&onPatch<0.5*verts.length){ cand.reasons=cand.reasons.filter(r=>r!=='too small'&&r!=='barely raised'&&r!=='no flat top'); cand.leftover=true; } }
     if(state.secondLook&&!cand.leftover&&!cand.reasons.length) cand.reasons.push('second look: only small leftovers beside rebuilt areas are taken');
-    cand.accepted=cand.reasons.length===0; cands.push(cand);
+    cand.hidden=cand.reasons.some(r=>r==='not on a facial surface'||r.startsWith('faces other scanned surface')||r==='sits on an edge');
+    cand.accepted=cand.reasons.length===0; if(cand.accepted) cand.hidden=false; cands.push(cand);
   }
   // hooks and wing tips often come out as separate specks next to a bracket: fold any small, clearly raised part into an accepted neighbour
   for(let i=cands.length-1;i>=0;i--){ const c=cands[i]; if(c.accepted||c.maxOff<0.8||c.diam>2.5||c.thinFrac>0.3||c.facial<0.2) continue;
@@ -680,7 +682,7 @@ function footprintRing(m,cand,r){
   for(const v of cand.verts){ const [u,w]=uv(v); const k=key(Math.floor(u*inv),Math.floor(w*inv)); const l=grid.get(k); if(l) l.push(u,w); else grid.set(k,[u,w]); if(u<umin)umin=u;if(u>umax)umax=u;if(w<wmin)wmin=w;if(w>wmax)wmax=w; }
   const refN=state.features?state.features.refN:null; const r2=r*r;
   for(let v=0;v<nv;v++){
-    if(refN&&(refN[3*v]*nx+refN[3*v+1]*ny+refN[3*v+2]*nz)<0.3) continue; // same side of the tooth only
+    if(refN&&(refN[3*v]*nx+refN[3*v+1]*ny+refN[3*v+2]*nz)<0.55) continue; // same face of the tooth only (stops where it turns toward a cusp tip or edge)
     const [u,w,h]=uv(v); if(u<umin-r||u>umax+r||w<wmin-r||w>wmax+r||Math.abs(h)>3) continue;
     const ci=Math.floor(u*inv),cj=Math.floor(w*inv); let hit=false;
     for(let i=ci-1;i<=ci+1&&!hit;i++) for(let j=cj-1;j<=cj+1&&!hit;j++){ const l=grid.get(key(i,j)); if(!l) continue; for(let k=0;k<l.length;k+=2){ const du=l[k]-u,dw=l[k+1]-w; if(du*du+dw*dw<=r2){hit=true;break;} } }
@@ -736,7 +738,7 @@ function applySelection(){
       // within 0.25 mm of the bracket itself (its own base corner)
       const ring=footprintRing(m,c,Math.min(margin,1.0)); const near=footprintRing(m,c,0.25); const gum=gumLineFn();
       const core=new Uint8Array(nv); for(const v of c.verts){ core[v]=1; ring[v]=1; near[v]=1; }
-      dil=new Uint8Array(nv); growDistance(m,core,u=>ring[u]&&(near[u]||!gum(u)),1e9,dil);
+      dil=new Uint8Array(nv); growDistance(m,core,u=>ring[u]&&(near[u]||!gum(u)),Math.min(margin,1.0)+0.6,dil);
       if(margin>1.0) growDistance(m,Uint8Array.from(dil),u=>onCrown(u)&&!gum(u),margin-1.0,dil);
       if(margin>0){ cementStep(m,dil); grooveRim(m,dil); } }
     for(let v=0;v<nv;v++) if(dil[v]){ base[v]=1; partId[v]=ci; } }
@@ -751,7 +753,8 @@ function applySelection(){
   if(state.manualErase) for(let v=0;v<nv;v++) if(state.manualErase[v]) base[v]=0;
   state.flag=base; state.partId=partId; state.parts=cands;
   let nf=0; for(let v=0;v<nv;v++) nf+=base[v];
-  $('s-comps').textContent=cands.length?`${nSel} selected · ${cands.length-nSel} other candidate${cands.length-nSel===1?'':'s'}`:'none found';
+  const nOther=cands.filter(c=>!c.on&&!c.hidden).length;
+  $('s-comps').textContent=cands.length?`${nSel} selected · ${nOther} other candidate${nOther===1?'':'s'}`:'none found';
   $('s-flag').textContent=nf.toLocaleString();
   $('btn-remove').disabled=busy||!nf; $('btn-remove').textContent=nSel?`Remove ${nSel} bracket${nSel===1?'':'s'}`:(nf?'Remove painted area':'Remove brackets');
   updateColors();
@@ -1321,11 +1324,11 @@ async function matchPre(){
     else if(part.preHeight<0.15){ if(!part.userSet) part.accepted=false; if(!part.reasons.includes('matches the pre-ortho anatomy')) part.reasons.push('matches the pre-ortho anatomy'); }
     if(!part.userSet&&part.accepted) verified++;
     // from an accepted part, grow through points that rise above the fitted pre surface, within a band and on surfaces facing the same way
-    if(part.accepted){ const [nx,ny,nz]=part.normal; const core=new Uint8Array(nv); for(const v of part.verts) core[v]=1; const mg=+$('p-margin').value; const ringP=footprintRing(m,part,Math.min(mg,1.0)); const nearP=footprintRing(m,part,0.25); const gumP=gumLineFn(); for(const v of part.verts){ ringP[v]=1; nearP[v]=1; } const seed=new Uint8Array(nv); growDistance(m,core,u=>ringP[u]&&(nearP[u]||!gumP(u)),1e9,seed); const tmp=new Uint8Array(nv);
+    if(part.accepted){ const [nx,ny,nz]=part.normal; const core=new Uint8Array(nv); for(const v of part.verts) core[v]=1; const mg=+$('p-margin').value; const ringP=footprintRing(m,part,Math.min(mg,1.0)); const nearP=footprintRing(m,part,0.25); const gumP=gumLineFn(); for(const v of part.verts){ ringP[v]=1; nearP[v]=1; } const seed=new Uint8Array(nv); growDistance(m,core,u=>ringP[u]&&(nearP[u]||!gumP(u)),Math.min(mg,1.0)+0.6,seed); const tmp=new Uint8Array(nv);
       // keep growing while the surface stands above the pre anatomy, over flat-ish surface facing the bracket's way
       // (bracket base, cement); steep surface is an embrasure wall or a neighbouring tooth and stops the growth
       const refN=state.features.refN, steep=state.features.steep;
-      const gumP2=gumLineFn(); growDistance(m,seed,u=>diff[u]>thr&&!gumP2(u)&&(refN[3*u]*nx+refN[3*u+1]*ny+refN[3*u+2]*nz)>0.2,band,tmp);
+      const gumP2=gumLineFn(); growDistance(m,seed,u=>diff[u]>thr&&diff[u]<0.9&&!gumP2(u)&&(refN[3*u]*nx+refN[3*u+1]*ny+refN[3*u+2]*nz)>0.55,band,tmp);
       // with the pre scan in hand, the removal set is: the bracket itself plus everything in the ring or band that stands above
       // the fitted pre anatomy; ring points that already match it are intact enamel or gingiva and are left alone
       const extra=[]; for(let v=0;v<nv;v++) if(tmp[v]&&!core[v]&&!(Math.abs(diff[v])<=thr)) extra.push(v); part.extra=extra; part.preTrim=true; }
@@ -1392,7 +1395,9 @@ function showGhost(on){
 function updateColors(){
   if(!geom) return; const m=state.mesh; const c=geom.getAttribute('color').array; const flag=state.flag, ip=state.isPatch;
   const co=state.candOf;
-  for(let v=0;v<m.nv;v++){ const k=flag&&flag[v]?COL.flag:(co&&co[v]>=0?COL.cand:(ip&&ip[v]?COL.patch:COL.base)); c[3*v]=k[0];c[3*v+1]=k[1];c[3*v+2]=k[2]; }
+  const cs=state.cands||[];
+  const showRej=$('show-rejected').checked;
+  for(let v=0;v<m.nv;v++){ const k=flag&&flag[v]?COL.flag:(showRej&&co&&co[v]>=0&&cs[co[v]]&&!cs[co[v]].hidden?COL.cand:(ip&&ip[v]?COL.patch:COL.base)); c[3*v]=k[0];c[3*v+1]=k[1];c[3*v+2]=k[2]; }
   geom.getAttribute('color').needsUpdate=true;
 }
 function fitView(){
@@ -1449,9 +1454,9 @@ $('gl').addEventListener('pointerup',e=>{
   const moved=Math.hypot(e.clientX-downAt[0],e.clientY-downAt[1]); downAt=null; if(moved>5) return;
   if(state.mode!=='orbit') return;
   const p=pickAt(e); if(!p) return; const m=state.mesh; const best=p.v;
-  if(!state.candOf) return; let ci=state.candOf[best];
-  if(ci<0){ const seed=new Uint8Array(m.nv); seed[best]=1; const near=new Uint8Array(m.nv); growDistance(m,seed,()=>true,0.8,near); for(let v=0;v<m.nv&&ci<0;v++) if(near[v]&&state.candOf[v]>=0) ci=state.candOf[v]; }
-  if(ci>=0) toggleCandidate(ci); else if(!grabAt(best)) status('Nothing bracket-like at that point. Use Mark in the toolbar to paint a free-form area.');
+  if(!state.candOf) return; const visible=i=>i>=0&&state.cands[i]&&(!state.cands[i].hidden||state.cands[i].on); let ci=state.candOf[best]; if(!visible(ci)) ci=-1;
+  if(ci<0){ const seed=new Uint8Array(m.nv); seed[best]=1; const near=new Uint8Array(m.nv); growDistance(m,seed,()=>true,0.8,near); for(let v=0;v<m.nv&&ci<0;v++) if(near[v]&&visible(state.candOf[v])) ci=state.candOf[v]; }
+  if(ci>=0) toggleCandidate(ci); else if(!grabAt(best)) status('Nothing bracket-like at that point. Use Mark in the tool rail to paint a free-form area.');
 });
 $('gl').addEventListener('pointercancel',()=>{ if(painting){ painting=false; controls.enabled=true; endStroke(); } if(lassoPts) cancelLasso(); });
 
@@ -1579,6 +1584,7 @@ function setMode(mode){
 }
 for(const k of ['orbit','add','erase','lasso','cut','build','smooth','flatten']) $('m-'+k).onclick=()=>setMode(k);
 $('sel-auto').addEventListener('change',()=>{ if(state.cands) applySelection(); });
+$('show-rejected').addEventListener('change',()=>updateColors());
 let marginSnap=null;
 $('p-margin').addEventListener('pointerdown',()=>{ marginSnap=snapSelection(); });
 $('p-margin').addEventListener('change',()=>{ if(marginSnap&&marginSnap.margin!==$('p-margin').value){ state.history.push({label:'changing the ring',snap:marginSnap}); if(state.history.length>HISTORY_MAX) state.history.shift(); state.future.length=0; updateHistoryButtons(); } marginSnap=null; });
@@ -1617,7 +1623,7 @@ async function runAuto(){
     if(state.pre) await matchPre();
     const sel=state.cands.filter(c=>c.on).length;
     if($('p-autoremove').checked&&sel){ await removeAndFill(); await secondPass(); }
-    else status(sel?`${sel} bracket${sel===1?'':'s'} selected (red); amber parts were seen but rejected. Click any part to include or exclude it, then press Remove.`:`${n} candidate${n===1?'':'s'} found but none passed as a bracket. Click an amber part to include it, or switch Step 2 to manual.`,null,!sel);
+    else status(sel?`${sel} bracket${sel===1?'':'s'} selected (red). Click a red part to drop it or a missed bracket to grab it, then press Remove.`:`No part passed as a bracket. Click each bracket to grab it, or tick "Show parts that were considered" to pick from the rejected ones.`,null,!sel);
   }catch(e){ console.error(e); status('Processing failed: '+e.message,null,true); }
   setBusy(false);
 }
