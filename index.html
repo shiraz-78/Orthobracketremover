@@ -1,3 +1,8 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Virtual Debond</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
@@ -160,9 +165,14 @@ canvas#lasso{position:absolute;inset:0;width:100%;height:100%;pointer-events:non
   .brushbar{left:calc(max(12px,env(safe-area-inset-left,0px)) + 76px);max-width:calc(100% - 150px)}.brushbar input[type=range]{width:80px}
   .status{left:76px;right:12px;bottom:12px;max-width:calc(100% - 230px)}.navpad{bottom:auto;top:170px}.brand .sub{display:none}.hist button span{display:none}
 }
+.dropzone{position:absolute;inset:10px;border:2px dashed var(--accent);border-radius:16px;background:color-mix(in srgb,var(--accent-soft) 70%,transparent);display:grid;place-items:center;pointer-events:none;z-index:5}
+.dropzone div{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 18px;display:flex;flex-direction:column;gap:4px;text-align:center;max-width:380px;box-shadow:0 6px 24px rgba(0,0,0,.12)}
+.dropzone b{font-size:15px}.dropzone span{font-size:12.5px;color:var(--muted)}
+.drop-target{outline:2px dashed var(--accent);outline-offset:2px}
 @media (prefers-reduced-motion:reduce){.bar i{transition:none}}
 </style>
-
+</head>
+<body>
 <div class="app" id="app">
   <header class="topbar">
     <div class="brand"><h1>Virtual Debond</h1><span class="sub">bracket removal for intraoral scans</span></div>
@@ -182,7 +192,7 @@ canvas#lasso{position:absolute;inset:0;width:100%;height:100%;pointer-events:non
         <label class="btn primary file" id="btn-load">Post-ortho STL<input type="file" id="file" accept=".stl,model/stl,application/sla"></label>
         <label class="btn file" id="btn-load-pre">+ Pre-ortho<input type="file" id="file-pre" accept=".stl,model/stl,application/sla"></label>
       </div>
-      <p class="note">The post-ortho scan is all that's needed. Adding the pre-ortho scan lets each tooth be fitted to its own earlier anatomy, which confirms the brackets and gives the true surface to rebuild. <button class="link" id="btn-sample">Try the sample</button></p>
+      <p class="note">The post-ortho scan is all that's needed. Adding the pre-ortho scan lets each tooth be fitted to its own earlier anatomy, which confirms the brackets and gives the true surface to rebuild. <button class="link" id="btn-sample">Try the sample scan</button></p>
       <details class="more"><summary>Scan details</summary>
         <dl class="stats">
           <dt>Post</dt><dd id="s-file">synthetic sample</dd>
@@ -344,6 +354,7 @@ canvas#lasso{position:absolute;inset:0;width:100%;height:100%;pointer-events:non
       </div>
       <div class="col"><button data-nav="zoom-in" title="Zoom in (+)">+</button><button data-nav="zoom-out" title="Zoom out (−)">−</button><span></span></div>
     </div>
+    <div class="dropzone" id="dropzone" hidden><div><b>Drop to open</b><span id="drop-hint">One STL opens as the post-ortho scan · drop on "+ Pre-ortho" for the pre scan · several go to the batch</span></div></div>
     <div class="status">
       <div class="bar" id="bar" hidden><i id="bar-i"></i></div>
       <div class="msg" id="msg">Loading viewer…</div>
@@ -1627,27 +1638,33 @@ async function runAuto(){
   }catch(e){ console.error(e); status('Processing failed: '+e.message,null,true); }
   setBusy(false);
 }
-$('file').addEventListener('change',async e=>{
-  const f=e.target.files[0]; if(!f) return; e.target.value='';
-  setBusy(true); status('Reading '+f.name,0.01); await tick();
+/* one entry point per kind of file, shared by the buttons, drag-and-drop and the desktop menu */
+async function openPostFile(f){
+  if(!f||busy) return; setBusy(true); status('Reading '+f.name,0.01); await tick();
   try{ const buf=await f.arrayBuffer(); const raw=parseSTL(buf); if(raw.length<9) throw new Error('no triangles found'); status('Welding vertices',0.02); await tick(); const w=weld(raw);
     if(state.pre&&state.preName==='synthetic pre-ortho'){ state.pre=null; state.preName='none'; state.global=null; showGhost(false); $('v-pre').disabled=true; $('s-pre').textContent='none'; }
     await loadMesh(w.pos,w.tris,f.name); await runAuto(); }
   catch(err){ console.error(err); status('Could not read that STL: '+err.message,null,true); setBusy(false); }
-});
+}
+$('file').addEventListener('change',e=>{ const f=e.target.files[0]; e.target.value=''; openPostFile(f); });
 async function loadPre(pos,tris,name){
   setBusy(true); status('Building pre-ortho mesh',0.5); await tick();
   state.pre=buildMesh(pos,tris); state.preName=name; state.global=null; state.parts=null; state.partId=null; showGhost(false); $('v-pre').disabled=true;
   $('s-pre').textContent=`${name} · ${state.pre.nt.toLocaleString()} tris`; $('s-gfit').textContent='–'; $('s-parts').textContent='–'; $('s-rms').textContent='–';
   setBusy(false); status(state.mesh?'Pre scan loaded.':'Pre scan loaded. Now load the post-ortho scan.');
 }
-$('file-pre').addEventListener('change',async e=>{
-  const f=e.target.files[0]; if(!f) return; e.target.value='';
-  setBusy(true); status('Reading '+f.name,0.01); await tick();
+async function openPreFile(f){
+  if(!f||busy) return; setBusy(true); status('Reading '+f.name,0.01); await tick();
   try{ const buf=await f.arrayBuffer(); const raw=parseSTL(buf); if(raw.length<9) throw new Error('no triangles found'); const w=weld(raw); await loadPre(w.pos,w.tris,f.name); if(state.mesh){ if(state.history.length) $('btn-reset').click(); else await runAuto(); } }
   catch(err){ console.error(err); status('Could not read that STL: '+err.message,null,true); setBusy(false); }
-});
-$('btn-sample').onclick=async()=>{ const s=makeSample(); const q=makeSample(true); await loadMesh(s.pos,s.tris,'synthetic sample'); await loadPre(q.pos,q.tris,'synthetic pre-ortho'); await runAuto(); };
+}
+$('file-pre').addEventListener('change',e=>{ const f=e.target.files[0]; e.target.value=''; openPreFile(f); });
+// the sample is a post-ortho scan only: no pre scan is loaded, so it never triggers the slower pre-scan matching
+$('btn-sample').onclick=async()=>{
+  if(busy) return;
+  if(state.pre){ state.pre=null; state.preName='none'; state.global=null; showGhost(false); $('v-pre').disabled=true; $('s-pre').textContent='none'; }
+  const s=makeSample(); await loadMesh(s.pos,s.tris,'synthetic sample'); await runAuto();
+};
 $('btn-auto').onclick=()=>runAuto();
 $('btn-match').onclick=async()=>{ if(busy) return; setBusy(true); try{ await matchPre(); }catch(e){ console.error(e); status('Matching failed: '+e.message,null,true);} setBusy(false); };
 $('btn-detect').onclick=async()=>{ if(!state.mesh) return; setBusy(true); try{ if(!state.features) await analyze(); await detect(); }catch(e){ console.error(e); status('Detection failed: '+e.message,null,true);} setBusy(false); };
@@ -1803,12 +1820,14 @@ function renderJobs(){
   $('job-run').disabled=jobsRunning||!queued||busy; $('job-run').textContent=jobsRunning?'Running…':`Run all (${queued})`; $('job-save-all').disabled=!done;
   $('job-note').textContent=jobs.length>=6?'Six scans queued (the maximum for one batch).':'';
 }
-$('job-files').addEventListener('change',e=>{
-  const room=6-jobs.length; const files=[...e.target.files].slice(0,Math.max(0,room)); e.target.value='';
+function addBatchFiles(list){
+  const all=[...list]; const room=6-jobs.length; const files=all.slice(0,Math.max(0,room));
   for(const f of files) jobs.push({id:'job-'+Date.now()+'-'+Math.random().toString(36).slice(2,7),name:f.name.replace(/\.stl$/i,'')+'_debonded',file:f,pre:null,status:'queued'});
-  if(e.target.files.length>files.length) status(`Only ${files.length} added: a batch holds six scans.`,null,true);
+  if(all.length>files.length) status(`Only ${files.length} added: a batch holds six scans.`,null,true);
+  if($('jobs').hidden) $('btn-jobs').click();
   renderJobs();
-});
+}
+$('job-files').addEventListener('change',e=>{ const fs=[...e.target.files]; e.target.value=''; addBatchFiles(fs); });
 async function readSTLFile(f){ const buf=await f.arrayBuffer(); const raw=parseSTL(buf); if(raw.length<9) throw new Error('no triangles found in '+f.name); return weld(raw); }
 async function runJobs(){
   if(jobsRunning) return; jobsRunning=true; renderJobs();
@@ -1851,11 +1870,68 @@ $('btn-jobs').onclick=()=>{ const show=$('jobs').hidden; $('jobs').hidden=!show;
 $('jobs-close').onclick=()=>$('btn-jobs').click();
 jobRestore();
 
+/* ------------------------------------------------------------ drag and drop */
+// a scan dropped or opened while a step is still running waits for that step instead of being ignored
+function whenIdle(fn,name){ if(!busy){ fn(); return; } status('Opening '+name+' when this step finishes…'); const t=setInterval(()=>{ if(!busy){ clearInterval(t); fn(); } },300); }
+function openIncoming(kind,files){
+  if(kind==='batch'||files.length>1) addBatchFiles(files);
+  else if(kind==='pre') whenIdle(()=>openPreFile(files[0]),files[0].name);
+  else whenIdle(()=>openPostFile(files[0]),files[0].name);
+}
+{ let depth=0; const isFiles=e=>e.dataTransfer&&[...e.dataTransfer.types].includes('Files');
+  const stl=list=>[...list].filter(f=>/\.stl$/i.test(f.name));
+  const zoneOf=e=>{ const t=e.target&&e.target.closest?e.target:null; if(!t) return 'post'; if(t.closest('#btn-load-pre')) return 'pre'; if(t.closest('#jobs')) return 'batch'; return 'post'; };
+  window.addEventListener('dragenter',e=>{ if(!isFiles(e)) return; e.preventDefault(); depth++; $('dropzone').hidden=false; });
+  window.addEventListener('dragover',e=>{ if(!isFiles(e)) return; e.preventDefault(); e.dataTransfer.dropEffect='copy'; const z=zoneOf(e); $('btn-load-pre').classList.toggle('drop-target',z==='pre'); $('jobs').classList.toggle('drop-target',z==='batch'&&!$('jobs').hidden); });
+  window.addEventListener('dragleave',e=>{ if(!isFiles(e)) return; depth=Math.max(0,depth-1); if(!depth){ $('dropzone').hidden=true; $('btn-load-pre').classList.remove('drop-target'); $('jobs').classList.remove('drop-target'); } });
+  window.addEventListener('drop',e=>{ if(!isFiles(e)) return; e.preventDefault(); depth=0; $('dropzone').hidden=true; $('btn-load-pre').classList.remove('drop-target'); $('jobs').classList.remove('drop-target');
+    const files=stl(e.dataTransfer.files); if(!files.length){ status('Only .stl files can be opened.',null,true); return; }
+    openIncoming(zoneOf(e),files); });
+}
+
+/* --------------------------------------------------------- desktop (Electron) */
+if(window.electronAPI&&window.electronAPI.onCommand){
+  const api=window.electronAPI; let dirty=false;
+  const setDirty=d=>{ if(d!==dirty){ dirty=d; api.setDirty&&api.setDirty(d); } };
+  // a result that has not been exported yet: anything in the undo history since the last load or export
+  const _rec=recordAction; recordAction=function(){ const r=_rec.apply(this,arguments); setDirty(true); return r; };
+  const _load=loadMesh; loadMesh=async function(){ const r=await _load.apply(this,arguments); setDirty(false); return r; };
+  const _exp=$('btn-export').onclick; $('btn-export').onclick=async()=>{ await _exp(); if(/^Saved /.test($('msg').textContent)) setDirty(false); };
+  const inText=()=>{ const a=document.activeElement; return a&&(/INPUT|TEXTAREA/.test(a.tagName)&&a.type!=='range'&&a.type!=='checkbox'&&a.type!=='radio'); };
+  const keyJustActed=()=>window.__lastKeyHistory&&performance.now()-window.__lastKeyHistory<400;
+  api.onCommand(cmd=>{
+    switch(cmd){
+      // the page already acted on the key press itself; the menu copy of the same press is ignored
+      case 'undo': if(inText()) document.execCommand('undo'); else if(!keyJustActed()) undo(); break;
+      case 'redo': if(inText()) document.execCommand('redo'); else if(!keyJustActed()) redo(); break;
+      case 'export': $('btn-export').click(); break;
+      case 'batch': $('btn-jobs').click(); break;
+      case 'remove': if(!$('btn-remove').disabled) $('btn-remove').click(); break;
+      case 'sample': $('btn-sample').click(); break;
+      case 'fit': fitView(); break;
+      case 'view-front': case 'view-occlusal': case 'view-left': case 'view-right': presetView(cmd.slice(5)); break;
+    }
+  });
+  api.onOpenFiles(({kind,files})=>{
+    openIncoming(kind,files.map(x=>new File([x.bytes],x.name,{type:'model/stl'})));
+  });
+  // the desktop app opens straight to the welcome state instead of the sample
+  window.__desktop=true;
+  api.ready&&api.ready();
+}
+
 /* ------------------------------------------------------------------- boot */
 window.addEventListener('error',e=>{ status('Something went wrong: '+(e.message||e),null,true); setBusy(false); });
 window.addEventListener('unhandledrejection',e=>{ status('Something went wrong: '+(e.reason&&e.reason.message||e.reason),null,true); setBusy(false); });
-document.addEventListener('keydown',e=>{ if(e.target&&/INPUT|TEXTAREA/.test(e.target.tagName)) return; const k={'1':'orbit','2':'add','3':'erase','4':'lasso','5':'cut','6':'build','7':'smooth','8':'flatten'}[e.key]; if(k) setMode(k); if(e.key==='Escape'&&lassoPts) cancelLasso();
-  const arrow={ArrowUp:'up',ArrowDown:'down',ArrowLeft:'left',ArrowRight:'right'}[e.key]; if(arrow){ e.preventDefault(); nav((e.shiftKey?'pan-':'rot-')+arrow); } if(e.key==='+'||e.key==='='){ nav('zoom-in'); } if(e.key==='-'||e.key==='_'){ nav('zoom-out'); } if(e.key==='['){ $('p-brush').value=Math.max(0.3,+$('p-brush').value-0.2); $('p-brush').dispatchEvent(new Event('input')); } if(e.key===']'){ $('p-brush').value=Math.min(5,+$('p-brush').value+0.2); $('p-brush').dispatchEvent(new Event('input')); } if((e.ctrlKey||e.metaKey)&&!e.shiftKey&&e.key.toLowerCase()==='z'){ e.preventDefault(); undo(); } if((e.ctrlKey||e.metaKey)&&(e.key.toLowerCase()==='y'||(e.shiftKey&&e.key.toLowerCase()==='z'))){ e.preventDefault(); redo(); } });
-if(window.THREE&&THREE.OrbitControls){ initThree(); $('btn-sample').click(); }
+document.addEventListener('keydown',e=>{ if(e.target&&/INPUT|TEXTAREA/.test(e.target.tagName)) return;
+  const kz=e.key.toLowerCase(), mod=e.ctrlKey||e.metaKey, isUndo=mod&&!e.shiftKey&&kz==='z', isRedo=mod&&(kz==='y'||(e.shiftKey&&kz==='z'));
+  if(isUndo||isRedo){ e.preventDefault(); window.__lastKeyHistory=performance.now(); if(isUndo) undo(); else redo(); return; }
+  if(mod||e.altKey) return;   // other Ctrl/Cmd shortcuts belong to the browser or the desktop menu
+  const k={'1':'orbit','2':'add','3':'erase','4':'lasso','5':'cut','6':'build','7':'smooth','8':'flatten'}[e.key]; if(k) setMode(k); if(e.key==='Escape'&&lassoPts) cancelLasso();
+  const arrow={ArrowUp:'up',ArrowDown:'down',ArrowLeft:'left',ArrowRight:'right'}[e.key]; if(arrow){ e.preventDefault(); nav((e.shiftKey?'pan-':'rot-')+arrow); } if(e.key==='+'||e.key==='='){ nav('zoom-in'); } if(e.key==='-'||e.key==='_'){ nav('zoom-out'); } if(e.key==='['){ $('p-brush').value=Math.max(0.3,+$('p-brush').value-0.2); $('p-brush').dispatchEvent(new Event('input')); } if(e.key===']'){ $('p-brush').value=Math.min(5,+$('p-brush').value+0.2); $('p-brush').dispatchEvent(new Event('input')); } });
+if(window.THREE&&THREE.OrbitControls){ initThree(); if(window.__desktop&&!window.electronAPI.wantSample){ status('Open a post-ortho STL (Ctrl+O), drop one on the window, or try the sample.'); } else $('btn-sample').click(); }
 else status('The 3D library did not load. Reload the page.',null,true);
 </script>
+
+</body>
+</html>

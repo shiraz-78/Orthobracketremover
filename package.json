@@ -3,14 +3,16 @@
   "productName": "Virtual Debond",
   "version": "1.0.0",
   "description": "Removes orthodontic brackets and cement from intraoral scans and rebuilds the enamel underneath.",
+  "author": "Smile Works",
+  "homepage": "https://github.com/shiraz-78/Orthobracketremover",
   "main": "electron/main.js",
   "license": "CC0-1.0",
   "scripts": {
     "start": "electron .",
-    "dist": "electron-builder",
-    "dist:win": "electron-builder --win",
-    "dist:mac": "electron-builder --mac",
-    "dist:linux": "electron-builder --linux"
+    "dist": "electron-builder --publish never",
+    "dist:win": "electron-builder --win --publish never",
+    "dist:mac": "electron-builder --mac --publish never",
+    "dist:linux": "electron-builder --linux --publish never"
   },
   "devDependencies": {
     "electron": "33.2.1",
@@ -19,10 +21,35 @@
   "build": {
     "appId": "com.smileworks.virtualdebond",
     "productName": "Virtual Debond",
-    "files": ["index.html", "vendor/**", "electron/**", "package.json"],
-    "directories": { "output": "dist" },
-    "win": { "target": ["nsis", "portable"] },
-    "mac": { "target": ["dmg"], "category": "public.app-category.medical" },
-    "linux": { "target": ["AppImage"], "category": "Science" }
+    "copyright": "Released under CC0 1.0",
+    "directories": { "output": "dist", "buildResources": "build" },
+    "files": ["index.html", "vendor/**", "electron/**", "build/icon.png", "package.json"],
+    "icon": "build/icon.png",
+    "afterPack": "build/afterPack.js",
+    "win": {
+      "target": [{ "target": "nsis", "arch": ["x64"] }, { "target": "portable", "arch": ["x64"] }]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Virtual Debond",
+      "artifactName": "Virtual-Debond-Setup-${version}.${ext}"
+    },
+    "portable": { "artifactName": "Virtual-Debond-${version}-portable.${ext}" },
+    "mac": {
+      "target": [{ "target": "dmg", "arch": ["arm64", "x64"] }],
+      "category": "public.app-category.medical",
+      "identity": null,
+      "artifactName": "Virtual-Debond-${version}-mac-${arch}.${ext}"
+    },
+    "dmg": { "title": "Virtual Debond ${version}" },
+    "linux": {
+      "target": [{ "target": "AppImage", "arch": ["x64"] }],
+      "category": "Science",
+      "artifactName": "Virtual-Debond-${version}-linux-${arch}.${ext}"
+    }
   }
 }

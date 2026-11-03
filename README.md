@@ -2,12 +2,28 @@
 
 Detects orthodontic brackets on a post-treatment intraoral STL, removes them together with the cement flash, rebuilds the enamel underneath, and exports a clean STL that a retainer can be made on. Everything runs in the browser; no server, no upload.
 
-Open `index.html` in Chrome (or any current browser). The sample pair loads on start so the whole flow can be seen before loading a real scan.
+In the browser a small synthetic post-ortho sample loads on start so the whole flow can be seen before loading a real scan (it has no pre-ortho scan, so it opens quickly). The desktop app starts empty and waits for a scan.
 
-## Run it
+## Desktop app
 
-- **Desktop app (Electron).** `npm install` then `npm start`. `npm run dist` builds an installer for the current platform (`dist:win`, `dist:mac`, `dist:linux` for a specific one) into `dist/`. The desktop app saves STLs through native dialogs and works offline (three.js is vendored).
-- **Browser.** Open `index.html` directly, or serve the folder. Export downloads the STL.
+**Install.** Download the installer for your computer from the [Releases page](https://github.com/shiraz-78/Orthobracketremover/releases) (or from the latest run under *Actions → Build desktop app → Artifacts*):
+
+| Computer | File |
+|---|---|
+| Windows 10/11 | `Virtual-Debond-Setup-<version>.exe` (installer) or `Virtual-Debond-<version>-portable.exe` (runs without installing) |
+| Mac, Apple silicon | `Virtual-Debond-<version>-mac-arm64.dmg` |
+| Mac, Intel | `Virtual-Debond-<version>-mac-x64.dmg` |
+| Linux | `Virtual-Debond-<version>-linux-x86_64.AppImage` (`chmod +x`, then run) |
+
+The installers are not code-signed, so the first launch needs one extra click: on Windows, SmartScreen shows *Windows protected your PC* → **More info** → **Run anyway**; on a Mac, drag the app to Applications, try to open it once, then go to *System Settings → Privacy & Security* and click **Open Anyway** (on macOS 14 and older, right-click the app → **Open** also works).
+
+**Use.** *File → Open Post-ortho Scan…* (Ctrl+O / ⌘O), or drop STL files on the window: one file opens in the editor, several go into the batch, and a file dropped on *Pre-ortho* becomes the pre scan. Export (Ctrl+S) saves through the normal Save dialog and remembers the last folder. Batch results are kept between sessions; closing with an unexported edit asks first. Everything runs offline: no scan leaves the computer.
+
+**Build from source.** `npm install`, then `npm start` to run it, or `npm run dist` for an installer for the current platform (`dist:win`, `dist:mac`, `dist:linux` for a specific one) in `dist/`. Every push to `main` builds all three on GitHub Actions; pushing a tag such as `v1.0.1` attaches them to a release.
+
+## Browser
+
+Open `index.html` directly in Chrome (or any current browser), or serve the folder. Export downloads the STL.
 
 ## Workflow
 
@@ -35,4 +51,4 @@ All thresholds are under *Advanced settings*. Measured on a real pair, the rebui
 
 - Export inside claude.ai arrives as a `.zip` holding the STL; the desktop app and the local file save the `.stl` directly.
 - Libraries: three.js r128 (viewer only, vendored in `vendor/`). All geometry processing is in `index.html`.
-- Repository layout: `index.html` (the whole app), `vendor/` (three.js), `electron/` (desktop wrapper), `package.json` (Electron scripts and build config).
+- Repository layout: `index.html` (the whole app), `vendor/` (three.js and the two fonts, both bundled so the desktop app needs no network), `electron/` (desktop wrapper: window, menus, native file dialogs), `build/` (app icon), `.github/workflows/build.yml` (installer builds), `package.json` (Electron scripts and build config).
