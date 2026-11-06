@@ -19,7 +19,7 @@ The installers are not code-signed, so the first launch needs one extra click: o
 
 **Use.** *File → Open Post-ortho Scan…* (Ctrl+O / ⌘O), or drop STL files on the window: one file opens in the editor, several go into the batch, and a file dropped on *Pre-ortho* becomes the pre scan. Export (Ctrl+S) saves through the normal Save dialog and remembers the last folder. Batch results are kept between sessions; closing with an unexported edit asks first. Everything runs offline: no scan leaves the computer.
 
-**Build from source.** `npm install`, then `npm start` to run it, or `npm run dist` for an installer for the current platform (`dist:win`, `dist:mac`, `dist:linux` for a specific one) in `dist/`. Every push to `main` builds all three on GitHub Actions; pushing a tag such as `v1.0.1` attaches them to a release.
+**Build from source.** `npm install`, then `npm start` to run it, or `npm run dist` for an installer for the current platform (`dist:win`, `dist:mac`, `dist:linux` for a specific one) in `dist/`. Every push to `main` builds all three on GitHub Actions. To publish a new release, raise `version` in `package.json` and push: the first build of that version is posted on the Releases page as `v<version>`.
 
 ## Browser
 
