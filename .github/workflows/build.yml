@@ -37,22 +37,13 @@ jobs:
 
       - run: npm ci
 
-      # macOS runners: XProtect scans the freshly made disk image and keeps it busy, so
-      # electron-builder's "hdiutil detach" fails. Stop it before building the .dmg files.
-      - name: Free hdiutil (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          sudo pkill -9 XProtect >/dev/null 2>&1 || true
-          while pgrep XProtect >/dev/null; do sleep 3; done
-
       - name: Build installers
         shell: bash
         run: |
+          # one retry for the occasional busy disk image on the hosted Mac runners
           npx electron-builder ${{ matrix.target }} --publish never && exit 0
           [ "$RUNNER_OS" = "macOS" ] || exit 1
-          echo "Disk image was busy; trying once more"
-          sudo pkill -9 XProtect >/dev/null 2>&1 || true; sleep 10
-          npx electron-builder ${{ matrix.target }} --publish never
+          sleep 15; npx electron-builder ${{ matrix.target }} --publish never
         env:
           # unsigned builds: no certificate lookup
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'

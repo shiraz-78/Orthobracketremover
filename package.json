@@ -45,7 +45,6 @@
       "identity": null,
       "artifactName": "Virtual-Debond-${version}-mac-${arch}.${ext}"
     },
-    "dmg": { "title": "Virtual Debond ${version}" },
     "linux": {
       "target": [{ "target": "AppImage", "arch": ["x64"] }],
       "category": "Science",
