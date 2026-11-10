@@ -1,7 +1,7 @@
 {
   "name": "virtual-debond",
   "productName": "Virtual Debond",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Removes orthodontic brackets and cement from intraoral scans and rebuilds the enamel underneath.",
   "author": "Smile Works",
   "homepage": "https://github.com/shiraz-78/Orthobracketremover",
